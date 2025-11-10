@@ -1,0 +1,270 @@
+.main-layout {
+  min-height: 100vh;
+}
+
+.main-sidebar {
+  background: #001529 !important;
+  box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
+  position: relative;
+  z-index: 10;
+}
+
+.logo-container {
+  padding: 16px;
+  text-align: center;
+  border-bottom: 1px solid #1f1f1f;
+  margin-bottom: 16px;
+}
+
+.logo-expanded {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.logo-icon {
+  font-size: 24px;
+  color: #1890ff;
+}
+
+.logo-text {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.logo-collapsed {
+  font-size: 24px;
+  color: #1890ff;
+}
+
+.main-menu {
+  border-right: none;
+  background: transparent;
+}
+
+.main-menu .ant-menu-item {
+  margin: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.main-menu .ant-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.main-menu .ant-menu-item-selected {
+  background: #1890ff !important;
+  color: #fff;
+}
+
+.main-menu .ant-menu-submenu {
+  margin: 4px 8px;
+}
+
+.main-menu .ant-menu-submenu > .ant-menu-submenu-title {
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.main-menu .ant-menu-submenu > .ant-menu-submenu-title:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.main-menu .ant-menu-submenu-open > .ant-menu-submenu-title {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.main-menu .ant-menu-sub .ant-menu-item {
+  margin: 2px 16px;
+  border-radius: 4px;
+}
+
+.main-header {
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  z-index: 9;
+  position: relative;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.collapse-button {
+  font-size: 18px;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.collapse-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.notification-button {
+  font-size: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.notification-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.user-info {
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+
+.user-info:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.user-role {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.main-content {
+  background: #f0f2f5;
+  padding: 24px;
+  overflow: auto;
+  position: relative;
+}
+
+.content-wrapper {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  min-height: calc(100vh - 112px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .main-header {
+    padding: 0 16px;
+  }
+  
+  .user-details {
+    display: none;
+  }
+  
+  .main-content {
+    padding: 16px;
+  }
+  
+  .content-wrapper {
+    min-height: calc(100vh - 96px);
+  }
+}
+
+@media (max-width: 576px) {
+  .main-content {
+    padding: 12px;
+  }
+  
+  .content-wrapper {
+    border-radius: 4px;
+    min-height: calc(100vh - 88px);
+  }
+}
+
+/* Custom scrollbar */
+.main-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.main-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Animation for sidebar collapse */
+.main-sidebar.ant-layout-sider-collapsed .logo-text {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.main-sidebar:not(.ant-layout-sider-collapsed) .logo-text {
+  opacity: 1;
+  transition: opacity 0.2s 0.1s;
+}
+
+/* Menu item icons alignment */
+.main-menu .ant-menu-item .anticon,
+.main-menu .ant-menu-submenu-title .anticon {
+  font-size: 16px;
+}
+
+/* Badge styling */
+.ant-badge-count {
+  background: #ff4d4f;
+  border: 1px solid #fff;
+}
+
+/* Dropdown styling */
+.ant-dropdown {
+  border-radius: 8px;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Loading state */
+.content-wrapper.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dark mode support (future enhancement) */
+[data-theme="dark"] .main-content {
+  background: #141414;
+}
+
+[data-theme="dark"] .content-wrapper {
+  background: #1f1f1f;
+  border: 1px solid #303030;
+}
+
+/* Smooth transitions */
+.main-layout * {
+  transition: background 0.3s, border 0.3s, color 0.3s;
+}

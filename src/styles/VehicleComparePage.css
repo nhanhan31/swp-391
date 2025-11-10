@@ -1,0 +1,317 @@
+.vehicle-compare-page {
+  padding: 24px;
+}
+
+.page-header {
+  margin-bottom: 24px;
+  text-align: center;
+  padding: 40px 20px;
+  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+  border-radius: 12px;
+  color: white;
+}
+
+.page-header .ant-typography {
+  color: white !important;
+}
+
+.selection-card,
+.preview-card,
+.comparison-table-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.selected-vehicle-card {
+  height: 280px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.selected-vehicle-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.add-vehicle-card {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.add-vehicle-card:hover {
+  border-color: #1890ff !important;
+  background: #f6ffed;
+}
+
+.add-vehicle-card:hover .anticon,
+.add-vehicle-card:hover .ant-typography {
+  color: #1890ff !important;
+}
+
+.comparison-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.comparison-table .ant-table-thead > tr > th {
+  background: #fafafa;
+  font-weight: 600;
+  border-bottom: 2px solid #e8e8e8;
+}
+
+.comparison-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+  padding: 12px 16px;
+}
+
+.comparison-table .ant-table-tbody > tr:nth-child(even) {
+  background: #fafafa;
+}
+
+.comparison-table .ant-table-tbody > tr:hover {
+  background: #e6f7ff !important;
+}
+
+.vehicle-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.vehicle-name {
+  font-weight: 600;
+  color: #1890ff;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.remove-button {
+  padding: 0;
+  height: auto;
+  line-height: 1;
+}
+
+.remove-button:hover {
+  background: rgba(255, 77, 79, 0.1);
+  border-radius: 4px;
+}
+
+.compare-image {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+}
+
+.comparison-table .ant-table-cell:first-child {
+  background: #f0f8ff !important;
+  font-weight: 600;
+  color: #1890ff;
+  border-right: 2px solid #e8e8e8;
+}
+
+/* Fixed column styling */
+.comparison-table .ant-table-cell-fix-left {
+  background: #f0f8ff !important;
+}
+
+.comparison-table .ant-table-thead .ant-table-cell-fix-left {
+  background: #e6f7ff !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .vehicle-compare-page {
+    padding: 16px;
+  }
+  
+  .page-header {
+    padding: 20px 16px;
+    margin-bottom: 16px;
+  }
+  
+  .selection-card,
+  .preview-card,
+  .comparison-table-card {
+    margin-bottom: 16px;
+  }
+  
+  .comparison-table .ant-table-cell {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  
+  .vehicle-column-header {
+    padding: 4px 0;
+  }
+  
+  .vehicle-name {
+    font-size: 12px;
+  }
+  
+  .compare-image img {
+    width: 80px !important;
+    height: 60px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .vehicle-compare-page {
+    padding: 12px;
+  }
+  
+  .page-header {
+    padding: 16px 12px;
+  }
+  
+  .selected-vehicle-card {
+    height: auto;
+    min-height: 200px;
+  }
+  
+  .comparison-table .ant-table-cell:first-child {
+    min-width: 120px;
+    font-size: 11px;
+  }
+  
+  .comparison-table .ant-table-cell {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+}
+
+/* Animation effects */
+.selected-vehicle-card {
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.comparison-table-card {
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Custom scrollbar for table */
+.comparison-table .ant-table-body::-webkit-scrollbar {
+  height: 8px;
+}
+
+.comparison-table .ant-table-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.comparison-table .ant-table-body::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.comparison-table .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Highlight differences */
+.comparison-table tbody tr td {
+  transition: all 0.3s ease;
+}
+
+.comparison-table tbody tr:hover td {
+  background: #fff7e6 !important;
+}
+
+/* Price highlighting */
+.comparison-table tbody tr td .ant-typography[style*="color: rgb(245, 34, 45)"] {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* Status tag styling */
+.comparison-table .ant-tag {
+  margin: 0;
+  border-radius: 4px;
+}
+
+/* Tooltip styling for features */
+.ant-tooltip {
+  max-width: 300px;
+}
+
+.ant-tooltip-inner {
+  text-align: left;
+  line-height: 1.4;
+}
+
+/* Empty state styling */
+.ant-empty {
+  padding: 60px 20px;
+}
+
+.ant-empty .ant-empty-description {
+  color: #999;
+}
+
+/* Alert styling */
+.ant-alert {
+  border-radius: 6px;
+}
+
+.ant-alert-warning {
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+}
+
+/* Button hover effects */
+.ant-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Card meta styling */
+.ant-card-meta-title {
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+  margin-bottom: 4px !important;
+}
+
+.ant-card-meta-description {
+  font-size: 12px !important;
+}
+
+/* Loading states */
+.comparison-table.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.comparison-table.loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
