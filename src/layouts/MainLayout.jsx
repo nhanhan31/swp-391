@@ -177,7 +177,8 @@ const MainLayout = () => {
           label: 'Thông tin xe',
           children: [
             { key: '/vehicles/catalog', label: 'Danh mục xe' },
-            { key: '/vehicles/compare', label: 'So sánh xe' }
+            { key: '/vehicles/compare', label: 'So sánh xe' },
+            // { key: '/vehicles/price', label: 'Bảng giá' }
           ]
         },
         {

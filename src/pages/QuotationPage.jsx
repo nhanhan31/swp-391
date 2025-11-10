@@ -37,7 +37,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuth } from '../context/AuthContext';
-import { quotationAPI, userAPI, customerAPI, contractAPI, orderAPI, agencyInventoryAPI } from '../services/quotationService';
+import { quotationAPI, userAPI, customerAPI, contractAPI, orderAPI, agencyInventoryAPI, promotionAPI } from '../services/quotationService';
 import { vehicleAPI, vehicleInstanceAPI, vehiclePriceAPI } from '../services/vehicleService';
 
 const { Title, Text } = Typography;
@@ -61,6 +61,7 @@ const QuotationPage = () => {
   const [vehicleInstances, setVehicleInstances] = useState([]);
   const [vehiclePrices, setVehiclePrices] = useState([]);
   const [agencyInventory, setAgencyInventory] = useState([]);
+  const [promotions, setPromotions] = useState([]);
 
   // Customer data
   const [customers, setCustomers] = useState([]);
@@ -72,17 +73,27 @@ const QuotationPage = () => {
       try {
         let quotationsData = [];
 
+        console.log('Current User:', currentUser);
+        console.log('Is Dealer Staff:', isDealerStaff());
+        console.log('Is Dealer Manager:', isDealerManager());
+
         if (isDealerStaff()) {
           // AgencyStaff: Get quotations created by this user
           const userId = currentUser?.id;
+          console.log('Fetching quotations for userId:', userId);
           if (userId) {
             quotationsData = await quotationAPI.getByUserId(userId);
+            console.log('Staff quotations data:', quotationsData);
+          } else {
+            console.warn('No userId found for staff');
           }
         } else if (isDealerManager()) {
           // AgencyManager: Get all quotations for this agency
           const agencyId = getAgencyId();
+          console.log('Fetching quotations for agencyId:', agencyId);
           if (agencyId) {
             quotationsData = await quotationAPI.getByAgencyId(agencyId);
+            console.log('Manager quotations data:', quotationsData);
 
             // Fetch user info for each quotation if user is null
             const quotationsWithUsers = await Promise.all(
@@ -100,7 +111,18 @@ const QuotationPage = () => {
               })
             );
             quotationsData = quotationsWithUsers;
+          } else {
+            console.warn('No agencyId found for manager');
           }
+        }
+
+        console.log('Raw quotations data:', quotationsData);
+        console.log('Is array:', Array.isArray(quotationsData));
+        
+        // Ensure quotationsData is always an array
+        if (!Array.isArray(quotationsData)) {
+          console.warn('quotationsData is not an array, converting to empty array');
+          quotationsData = [];
         }
 
         // Fetch customer info for all quotations
@@ -150,10 +172,15 @@ const QuotationPage = () => {
           user: q.user
         }));
 
+        console.log('Transformed quotations:', transformedQuotations);
+        console.log('Total quotations count:', transformedQuotations.length);
         setQuotations(transformedQuotations);
       } catch (error) {
         console.error('Error fetching quotations:', error);
-        message.error('Không thể tải dữ liệu báo giá');
+        console.error('Error details:', error.response?.data || error.message);
+        message.error(`Không thể tải dữ liệu báo giá: ${error.response?.data?.message || error.message}`);
+        // Set empty array to avoid undefined errors
+        setQuotations([]);
       } finally {
         setLoading(false);
       }
@@ -184,15 +211,17 @@ const QuotationPage = () => {
 
         const uniqueVehicleIds = [...new Set(filteredInstances.map(inst => inst.vehicleId))];
 
-        const [vehiclesData, pricesData] = await Promise.all([
+        const [vehiclesData, pricesData, promotionsData] = await Promise.all([
           vehicleAPI.getAll(),
-          vehiclePriceAPI.getAll()
+          vehiclePriceAPI.getAll(),
+          agencyId ? promotionAPI.getByAgencyId(agencyId) : Promise.resolve([])
         ]);
 
         const filteredVehicles = (vehiclesData || []).filter(v => uniqueVehicleIds.includes(v.id));
 
         setVehicles(filteredVehicles);
         setVehiclePrices(pricesData || []);
+        setPromotions(promotionsData || []);
       } catch (error) {
         console.error('Error fetching vehicle data:', error);
       }
@@ -474,8 +503,27 @@ const QuotationPage = () => {
     const vehicle = vehicleData.find(v => v.id === vehicleId);
     setSelectedVehicle(vehicle);
     if (vehicle) {
+      // Tìm khuyến mãi đang áp dụng cho xe này
+      const now = dayjs();
+      const activePromotion = promotions.find(promo => 
+        promo.vehicleId === vehicleId &&
+        dayjs(promo.startDate).isBefore(now) &&
+        dayjs(promo.endDate).isAfter(now)
+      );
+
+      let finalPrice = vehicle.price;
+      let discountAmount = 0;
+
+      if (activePromotion) {
+        discountAmount = activePromotion.discountAmount;
+        finalPrice = vehicle.price - discountAmount;
+        message.success(`Đã áp dụng khuyến mãi: ${activePromotion.promoName} - Giảm ${new Intl.NumberFormat('vi-VN').format(discountAmount)} VND`);
+      }
+
       form.setFieldsValue({
-        quoted_price: vehicle.price
+        quoted_price: finalPrice,
+        discount_amount: discountAmount,
+        original_price: vehicle.price
       });
     }
   };
@@ -688,8 +736,8 @@ const QuotationPage = () => {
             }
           );
 
-          // Only AgencyManager can approve/reject
-          if (isDealerManager()) {
+          // Both AgencyManager and AgencyStaff can approve/reject
+          if (isDealerManager() || isDealerStaff()) {
             items.push(
               {
                 type: 'divider'
@@ -711,7 +759,8 @@ const QuotationPage = () => {
           }
         }
 
-        if (record.status === 'accepted') {
+        // Only AgencyManager can convert to order
+        if (record.status === 'accepted' && isDealerManager()) {
           items.push({
             key: 'convert',
             icon: <FileTextOutlined />,
@@ -931,9 +980,44 @@ const QuotationPage = () => {
               </Col>
             </Row>
 
+            {/* Hidden fields for tracking */}
+            <Form.Item name="original_price" hidden>
+              <InputNumber />
+            </Form.Item>
+            <Form.Item name="discount_amount" hidden>
+              <InputNumber />
+            </Form.Item>
+
+            {/* Display promotion info if applicable */}
+            {form.getFieldValue('discount_amount') > 0 && (
+              <Card 
+                size="small" 
+                style={{ marginBottom: 16, backgroundColor: '#fff7e6', border: '1px solid #ffa940' }}
+              >
+                <Row gutter={16} align="middle">
+                  <Col span={12}>
+                    <Text strong>Giá gốc:</Text>
+                    <br />
+                    <Text style={{ fontSize: '16px' }}>
+                      {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+                        .format(form.getFieldValue('original_price') || 0)}
+                    </Text>
+                  </Col>
+                  <Col span={12}>
+                    <Text strong style={{ color: '#ff4d4f' }}>Giảm giá:</Text>
+                    <br />
+                    <Text style={{ fontSize: '16px', color: '#ff4d4f', fontWeight: 'bold' }}>
+                      - {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+                        .format(form.getFieldValue('discount_amount') || 0)}
+                    </Text>
+                  </Col>
+                </Row>
+              </Card>
+            )}
+
             <Form.Item
               name="quoted_price"
-              label="Giá báo"
+              label="Giá báo (Sau khuyến mãi)"
               rules={[{ required: true, message: 'Nhập giá báo' }]}
             >
               <InputNumber

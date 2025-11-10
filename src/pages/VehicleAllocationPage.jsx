@@ -140,30 +140,31 @@ const VehicleAllocationPage = () => {
   };
 
   const handleCreate = (order) => {
-    // Tìm thông tin kho hãng cho loại xe này
-    const evInventory = evInventoryList.find(inv => inv.vehicleId === order.vehicleId);
+    // Lấy danh sách xe có trong EVInventory (kho hãng) cho loại xe này
+    const availableInEVInventory = evInventoryList.filter(evItem => {
+      // Kiểm tra vehicleInstance có khớp với vehicleId của đơn hàng không
+      return evItem.vehicleInstance?.vehicleId === order.vehicleId;
+    });
     
-    // Lấy danh sách xe instances có sẵn cho vehicle này
-    const availableInstances = vehicleInstanceList.filter(
-      instance => instance.vehicleId === order.vehicleId && 
-      (instance.status === 'Available' || instance.status === 'InStock' || !instance.status)
-    );
-    
-    console.log('=== Kiểm tra kho hãng ===');
+    console.log('=== Kiểm tra kho hãng (EVInventory) ===');
     console.log('Vehicle ID:', order.vehicleId);
-    console.log('EV Inventory:', evInventory);
     console.log('Đơn hàng cần:', order.quantity, 'xe');
-    console.log('Kho hãng có:', availableInstances.length, 'xe sẵn sàng');
-    console.log('Danh sách xe:', availableInstances.map(i => ({ id: i.id, vin: i.vin, status: i.status })));
+    console.log('Kho hãng có:', availableInEVInventory.length, 'xe');
+    console.log('Chi tiết xe trong kho:', availableInEVInventory.map(ev => ({
+      evInventoryId: ev.id,
+      instanceId: ev.vehicleInstanceId,
+      vin: ev.vehicleInstance?.vin,
+      vehicleId: ev.vehicleInstance?.vehicleId
+    })));
     
     // Kiểm tra kho hãng có đủ xe không
-    if (availableInstances.length < order.quantity) {
+    if (availableInEVInventory.length < order.quantity) {
       message.error({
         content: (
           <div>
             <div><strong>Không đủ xe trong kho hãng!</strong></div>
             <div>Đơn hàng cần: <strong>{order.quantity}</strong> xe</div>
-            <div>Kho hãng có: <strong>{availableInstances.length}</strong> xe sẵn sàng</div>
+            <div>Kho hãng có: <strong>{availableInEVInventory.length}</strong> xe sẵn sàng</div>
             <div style={{ marginTop: 8, color: '#ff4d4f' }}>
               ⚠️ Không thể phân bổ nếu không đủ số lượng!
             </div>
@@ -217,23 +218,24 @@ const VehicleAllocationPage = () => {
       
       setLoading(true);
 
-      // Process each vehicle instance
+      // Process each vehicle instance - TẠO ALLOCATION VÀ NHẬP KHO
       for (let i = 0; i < selectedInstances.length; i++) {
         const instanceId = selectedInstances[i];
         
         console.log(`\n--- Đang xử lý xe ${i + 1}/${selectedInstances.length} ---`);
         
-        // Step 1: Create allocation for this instance
+        // Step 1: Tạo allocation với agencyOrderId
         const allocationData = {
           agencyContractId: values.agencyContractId,
-          vehicleInstanceId: instanceId
+          vehicleInstanceId: instanceId,
+          agencyOrderId: selectedOrder.id
         };
 
         console.log('Tạo phân bổ:', allocationData);
         await allocationAPI.create(allocationData);
         console.log('✓ Đã tạo phân bổ');
 
-        // Step 2: Add to agency inventory
+        // Step 2: Nhập kho đại lý ngay sau khi phân bổ
         const order = orderList.find(o => o.id === selectedOrder.id);
         if (order && order.agencyId) {
           const inventoryData = {
@@ -246,13 +248,13 @@ const VehicleAllocationPage = () => {
         }
       }
 
-      console.log('\n=== Hoàn thành phân bổ ===');
+      console.log('\n=== Hoàn thành phân bổ và nhập kho ===');
       message.success({
-        content: `Đã phân bổ thành công ${selectedInstances.length} xe và nhập đủ số lượng vào kho đại lý!`,
+        content: `Đã phân bổ và nhập kho thành công ${selectedInstances.length} xe. Đơn hàng chuyển sang trạng thái Processing.`,
         duration: 5
       });
 
-      // Step 3: Update order status to 'Completed'
+      // Update order status to 'Processing'
       await agencyOrderAPI.update(selectedOrder.id, {
         vehicleId: selectedOrder.vehicleId,
         quantity: selectedOrder.quantity,
@@ -350,7 +352,8 @@ const VehicleAllocationPage = () => {
         const statusConfig = {
           'Confirmed': { color: 'green', text: 'Đã xác nhận', icon: <CheckCircleOutlined /> },
           'Pending': { color: 'gold', text: 'Chờ xác nhận', icon: <ClockCircleOutlined /> },
-          'Completed': { color: 'blue', text: 'Đã phân bổ', icon: <CheckCircleOutlined /> },
+          'Processing': { color: 'blue', text: 'Đang xử lý', icon: <ClockCircleOutlined /> },
+          'Completed': { color: 'cyan', text: 'Đã hoàn thành', icon: <CheckCircleOutlined /> },
           'Cancelled': { color: 'red', text: 'Đã hủy', icon: <CloseCircleOutlined /> }
         };
         const config = statusConfig[status] || statusConfig['Pending'];
@@ -363,10 +366,10 @@ const VehicleAllocationPage = () => {
       width: 150,
       align: 'center',
       render: (_, record) => {
-        const isAllocated = record.status === 'Completed';
+        const isAllocated = record.status === 'Processing' || record.status === 'Completed';
         
         if (isAllocated) {
-          return <Tag color="blue">Đã phân bổ</Tag>;
+          return <Tag color="blue">{record.status === 'Processing' ? 'Đã phân bổ' : 'Hoàn thành'}</Tag>;
         }
 
         return (
@@ -480,9 +483,8 @@ const VehicleAllocationPage = () => {
               </Descriptions.Item>
               <Descriptions.Item label="Kho hãng hiện có">
                 <Tag color="green">
-                  {vehicleInstanceList.filter(
-                    instance => instance.vehicleId === selectedOrder.vehicleId &&
-                    (instance.status === 'Available' || instance.status === 'InStock' || !instance.status)
+                  {evInventoryList.filter(evItem => 
+                    evItem.vehicleInstance?.vehicleId === selectedOrder.vehicleId
                   ).length} xe sẵn sàng
                 </Tag>
               </Descriptions.Item>
@@ -504,9 +506,8 @@ const VehicleAllocationPage = () => {
               <Form.Item
                 name="vehicleInstanceIds"
                 label={`Chọn đúng ${selectedOrder.quantity} xe từ kho hãng (Có ${
-                  vehicleInstanceList.filter(
-                    instance => instance.vehicleId === selectedOrder.vehicleId &&
-                    (instance.status === 'Available' || instance.status === 'InStock' || !instance.status)
+                  evInventoryList.filter(evItem => 
+                    evItem.vehicleInstance?.vehicleId === selectedOrder.vehicleId
                   ).length
                 } xe sẵn sàng)`}
                 rules={[
@@ -536,26 +537,28 @@ const VehicleAllocationPage = () => {
                   }
                   optionFilterProp="label"
                 >
-                  {vehicleInstanceList
-                    .filter(instance => 
-                      instance.vehicleId === selectedOrder.vehicleId &&
-                      (instance.status === 'Available' || instance.status === 'InStock' || !instance.status)
+                  {evInventoryList
+                    .filter(evItem => 
+                      evItem.vehicleInstance?.vehicleId === selectedOrder.vehicleId
                     )
-                    .map(instance => (
-                      <Select.Option 
-                        key={instance.id} 
-                        value={instance.id}
-                        label={`VIN: ${instance.vin || instance.id}`}
-                      >
-                        <div>
-                          <Text strong>VIN: {instance.vin || instance.id}</Text>
-                          <br />
-                          <Text type="secondary" style={{ fontSize: '12px' }}>
-                            Trạng thái: {instance.status || 'Available'} | Kho hãng
-                          </Text>
-                        </div>
-                      </Select.Option>
-                    ))}
+                    .map(evItem => {
+                      const instance = evItem.vehicleInstance;
+                      return (
+                        <Select.Option 
+                          key={instance.id} 
+                          value={instance.id}
+                          label={`VIN: ${instance.vin || instance.id}`}
+                        >
+                          <div>
+                            <Text strong>VIN: {instance.vin || instance.id}</Text>
+                            <br />
+                            <Text type="secondary" style={{ fontSize: '12px' }}>
+                              Engine: {instance.engineNumber || 'N/A'} | Kho hãng (EVInventory #{evItem.id})
+                            </Text>
+                          </div>
+                        </Select.Option>
+                      );
+                    })}
                 </Select>
               </Form.Item>
 
@@ -582,7 +585,12 @@ const VehicleAllocationPage = () => {
                   </li>
                   <li>
                     <Text style={{ fontSize: '12px' }}>
-                      Sau khi phân bổ, {selectedOrder.quantity} xe sẽ tự động nhập vào kho đại lý
+                      Sau khi phân bổ, đơn hàng sẽ chuyển sang trạng thái <strong>Processing</strong>
+                    </Text>
+                  </li>
+                  <li>
+                    <Text style={{ fontSize: '12px' }}>
+                      Xe sẽ tự động nhập vào kho đại lý ngay sau khi phân bổ
                     </Text>
                   </li>
                 </ul>

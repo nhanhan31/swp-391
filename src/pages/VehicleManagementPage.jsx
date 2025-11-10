@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -13,7 +13,13 @@ import {
   Modal,
   Statistic,
   Badge,
-  Dropdown
+  Dropdown,
+  Spin,
+  message,
+  Form,
+  Input,
+  InputNumber,
+  Upload
 } from 'antd';
 import {
   CarOutlined,
@@ -24,66 +30,206 @@ import {
   EyeOutlined,
   EditOutlined,
   PlusOutlined,
-  MoreOutlined
+  MoreOutlined,
+  UploadOutlined
 } from '@ant-design/icons';
-import { vehicleOptions, vehicles } from '../data/mockData';
+import axios from 'axios';
+
+const ALLOCATION_API = 'https://allocation.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
 
 const VehicleManagementPage = () => {
+  const [form] = Form.useForm();
   const [selectedModelId, setSelectedModelId] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [vehicleOptions, setVehicleOptions] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [modalMode, setModalMode] = useState('view'); // 'view', 'create', 'edit'
+  const [vehicleImageFile, setVehicleImageFile] = useState(null);
+
+  // Fetch VehicleOptions
+  useEffect(() => {
+    const fetchVehicleOptions = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(`${ALLOCATION_API}/VehicleOption`);
+        setVehicleOptions(response.data || []);
+      } catch (error) {
+        console.error('Error fetching vehicle options:', error);
+        message.error('Không thể tải danh sách dòng xe');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchVehicleOptions();
+  }, []);
+
+  // Fetch Vehicles
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(`${ALLOCATION_API}/Vehicle`);
+        setVehicles(response.data || []);
+      } catch (error) {
+        console.error('Error fetching vehicles:', error);
+        message.error('Không thể tải danh sách xe');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchVehicles();
+  }, []);
 
   const modelData = useMemo(() => {
     return vehicleOptions.map(model => {
-      const variants = vehicles.filter(v => v.vehiclesOptions_id === model.id);
+      const variants = vehicles.filter(v => v.vehicleOptionId === model.id);
       const colors = [...new Set(variants.map(v => v.color))];
-      const featureHighlights = variants.flatMap(variant => variant.features.split(', '));
+      const featureHighlights = variants.flatMap(variant => 
+        variant.features ? variant.features.split(', ') : []
+      );
       const uniqueFeatures = [...new Set(featureHighlights)].slice(0, 5);
 
       return {
         id: model.id,
-        model_name: model.model_name,
+        model_name: model.modelName,
         description: model.description,
         variant_count: variants.length,
         colors,
         variants,
         uniqueFeatures,
-        created_at: model.created_at
+        created_at: model.createdAt,
+        updated_at: model.updatedAt
       };
     });
-  }, []);
+  }, [vehicleOptions, vehicles]);
 
   const variantData = useMemo(() => {
     return vehicles.map(variant => {
-      const model = vehicleOptions.find(option => option.id === variant.vehiclesOptions_id);
+      const model = vehicleOptions.find(option => option.id === variant.vehicleOptionId);
       return {
         id: variant.id,
-        variant_name: variant.variant_name,
-        model_name: model?.model_name || 'N/A',
+        variant_name: variant.variantName,
+        model_name: model?.modelName || 'N/A',
+        vehicle_option_id: variant.vehicleOptionId,
         color: variant.color,
-        battery_capacity: variant.battery_capacity,
-        range_km: variant.range_km,
+        battery_capacity: variant.batteryCapacity,
+        range_km: variant.rangeKM,
         features: variant.features,
         status: variant.status,
-        image_url: variant.image_url
+        image_url: variant.vehicleImage,
+        created_at: variant.createdAt,
+        updated_at: variant.updatedAt
       };
     });
-  }, []);
+  }, [vehicleOptions, vehicles]);
 
   const filteredVariants = selectedModelId === 'all'
     ? variantData
-    : variantData.filter(variant => variantData && vehicles.find(v => v.id === variant.id)?.vehiclesOptions_id === selectedModelId);
+    : variantData.filter(variant => variant.vehicle_option_id === selectedModelId);
 
   const totalModels = modelData.length;
   const totalVariants = vehicles.length;
   const totalColors = new Set(vehicles.map(v => v.color)).size;
-  const highRangeModels = vehicles.filter(v => v.range_km >= 600).length;
+  const highRangeModels = vehicles.filter(v => v.rangeKM >= 600).length;
 
   const handleViewDetails = (record) => {
     setSelectedVariant(record);
+    setModalMode('view');
     setIsModalOpen(true);
+  };
+
+  const handleCreate = () => {
+    setModalMode('create');
+    setSelectedVariant(null);
+    form.resetFields();
+    setVehicleImageFile(null);
+    setIsModalOpen(true);
+  };
+
+  const handleEdit = (record) => {
+    setModalMode('edit');
+    setSelectedVariant(record);
+    form.setFieldsValue({
+      vehicleOptionId: record.vehicle_option_id,
+      variantName: record.variant_name,
+      color: record.color,
+      batteryCapacity: record.battery_capacity,
+      rangeKM: record.range_km,
+      features: record.features,
+      status: record.status
+    });
+    setVehicleImageFile(null);
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+
+      const formData = new FormData();
+      
+      if (modalMode === 'create') {
+        formData.append('VehicleOptionId', values.vehicleOptionId);
+        formData.append('VariantName', values.variantName);
+        if (vehicleImageFile) {
+          formData.append('VehicleImage', vehicleImageFile);
+        }
+        formData.append('Color', values.color);
+        formData.append('BatteryCapacity', values.batteryCapacity);
+        formData.append('RangeKM', values.rangeKM);
+        formData.append('Features', values.features);
+        formData.append('Status', values.status || 'Active');
+
+        await axios.post(`${ALLOCATION_API}/Vehicle`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+
+        message.success('Tạo xe thành công');
+      } else if (modalMode === 'edit') {
+        formData.append('VehicleOptionId', values.vehicleOptionId);
+        formData.append('VariantName', values.variantName);
+        if (vehicleImageFile) {
+          formData.append('VehicleImage', vehicleImageFile);
+        }
+        formData.append('Color', values.color);
+        formData.append('BatteryCapacity', values.batteryCapacity);
+        formData.append('RangeKM', values.rangeKM);
+        formData.append('Features', values.features);
+        formData.append('Status', values.status || 'Active');
+
+        await axios.put(`${ALLOCATION_API}/Vehicle/${selectedVariant.id}`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+
+        message.success('Cập nhật xe thành công');
+      }
+
+      // Refresh data
+      const response = await axios.get(`${ALLOCATION_API}/Vehicle`);
+      setVehicles(response.data || []);
+      
+      form.resetFields();
+      setIsModalOpen(false);
+      setVehicleImageFile(null);
+    } catch (error) {
+      console.error('Error submitting vehicle:', error);
+      message.error('Không thể lưu thông tin xe');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const modelColumns = [
@@ -237,7 +383,7 @@ const VehicleManagementPage = () => {
       key: 'status',
       width: 120,
       render: (status) => (
-        <Badge status={status === 'available' ? 'success' : 'warning'} text={status === 'available' ? 'Sẵn sàng' : 'Đang cập nhật'} />
+        <Badge status={status === 'Active' ? 'success' : 'warning'} text={status === 'Active' ? 'Hoạt động' : 'Không hoạt động'} />
       )
     },
     {
@@ -258,7 +404,7 @@ const VehicleManagementPage = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Chỉnh sửa',
-            onClick: () => {}
+            onClick: () => handleEdit(record)
           }
         ];
 
@@ -272,18 +418,19 @@ const VehicleManagementPage = () => {
   ];
 
   return (
-    <div className="vehicle-management-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <CarOutlined /> Quản lý danh mục xe điện
-          </Title>
-          <Text type="secondary">Theo dõi các dòng xe, phiên bản và cấu hình màu sắc</Text>
+    <Spin spinning={loading}>
+      <div className="vehicle-management-page">
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <CarOutlined /> Quản lý danh mục xe điện
+            </Title>
+            <Text type="secondary">Theo dõi các dòng xe, phiên bản và cấu hình màu sắc</Text>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+            Thêm phiên bản mới
+          </Button>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} size="large">
-          Thêm phiên bản mới
-        </Button>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
@@ -374,20 +521,31 @@ const VehicleManagementPage = () => {
         title={
           <Space>
             <CarOutlined />
-            <span>Thông tin phiên bản</span>
+            <span>
+              {modalMode === 'view' ? 'Thông tin phiên bản' : 
+               modalMode === 'create' ? 'Thêm phiên bản mới' : 'Chỉnh sửa phiên bản'}
+            </span>
           </Space>
         }
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
-        footer={[
-          <Button key="edit" icon={<EditOutlined />}>Chỉnh sửa</Button>,
-          <Button key="close" type="primary" onClick={() => setIsModalOpen(false)}>
-            Đóng
-          </Button>
-        ]}
+        footer={
+          modalMode === 'view' ? [
+            <Button key="close" type="primary" onClick={() => setIsModalOpen(false)}>
+              Đóng
+            </Button>
+          ] : [
+            <Button key="cancel" onClick={() => setIsModalOpen(false)}>
+              Hủy
+            </Button>,
+            <Button key="submit" type="primary" onClick={handleSubmit}>
+              {modalMode === 'create' ? 'Tạo mới' : 'Cập nhật'}
+            </Button>
+          ]
+        }
         width={720}
       >
-        {selectedVariant && (
+        {modalMode === 'view' && selectedVariant && (
           <Descriptions bordered column={2}>
             <Descriptions.Item label="Phiên bản" span={2}>
               <Text strong>{selectedVariant.variant_name}</Text>
@@ -407,10 +565,109 @@ const VehicleManagementPage = () => {
             <Descriptions.Item label="Tính năng" span={2}>
               {selectedVariant.features}
             </Descriptions.Item>
+            <Descriptions.Item label="Trạng thái">
+              <Badge status={selectedVariant.status === 'Active' ? 'success' : 'warning'} 
+                     text={selectedVariant.status === 'Active' ? 'Hoạt động' : 'Không hoạt động'} />
+            </Descriptions.Item>
           </Descriptions>
+        )}
+        
+        {(modalMode === 'create' || modalMode === 'edit') && (
+          <Form form={form} layout="vertical">
+            <Form.Item
+              name="vehicleOptionId"
+              label="Dòng xe"
+              rules={[{ required: true, message: 'Vui lòng chọn dòng xe' }]}
+            >
+              <Select placeholder="Chọn dòng xe">
+                {vehicleOptions.map(option => (
+                  <Select.Option key={option.id} value={option.id}>
+                    {option.modelName}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="variantName"
+              label="Tên phiên bản"
+              rules={[{ required: true, message: 'Vui lòng nhập tên phiên bản' }]}
+            >
+              <Input placeholder="VD: VF8 Plus" />
+            </Form.Item>
+
+            <Form.Item
+              name="vehicleImage"
+              label="Hình ảnh xe"
+            >
+              <Upload
+                beforeUpload={(file) => {
+                  const isImage = file.type.startsWith('image/');
+                  if (!isImage) {
+                    message.error('Chỉ được tải lên file hình ảnh!');
+                  }
+                  const isLt5M = file.size / 1024 / 1024 < 5;
+                  if (!isLt5M) {
+                    message.error('Hình ảnh phải nhỏ hơn 5MB!');
+                  }
+                  if (isImage && isLt5M) {
+                    setVehicleImageFile(file);
+                  }
+                  return false;
+                }}
+                maxCount={1}
+                listType="picture"
+              >
+                <Button icon={<UploadOutlined />}>Chọn hình ảnh</Button>
+              </Upload>
+            </Form.Item>
+
+            <Form.Item
+              name="color"
+              label="Màu sắc"
+              rules={[{ required: true, message: 'Vui lòng nhập màu sắc' }]}
+            >
+              <Input placeholder="VD: Đen, Trắng, Xanh" />
+            </Form.Item>
+
+            <Form.Item
+              name="batteryCapacity"
+              label="Dung lượng pin"
+              rules={[{ required: true, message: 'Vui lòng nhập dung lượng pin' }]}
+            >
+              <Input placeholder="VD: 87.7 kWh" />
+            </Form.Item>
+
+            <Form.Item
+              name="rangeKM"
+              label="Quãng đường (km)"
+              rules={[{ required: true, message: 'Vui lòng nhập quãng đường' }]}
+            >
+              <InputNumber min={0} style={{ width: '100%' }} placeholder="VD: 600" />
+            </Form.Item>
+
+            <Form.Item
+              name="features"
+              label="Tính năng"
+              rules={[{ required: true, message: 'Vui lòng nhập tính năng' }]}
+            >
+              <Input.TextArea rows={3} placeholder="VD: Hệ thống lái tự động, Camera 360, Sạc nhanh" />
+            </Form.Item>
+
+            <Form.Item
+              name="status"
+              label="Trạng thái"
+            >
+              <Select placeholder="Chọn trạng thái" defaultValue="Active">
+                <Select.Option value="Active">Hoạt động</Select.Option>
+                <Select.Option value="Inactive">Không hoạt động</Select.Option>
+              </Select>
+            </Form.Item>
+          </Form>
         )}
       </Modal>
     </div>
+    </Spin>
   );
 };
 

@@ -145,27 +145,40 @@ const PaymentPage = () => {
     form.resetFields();
     setPaymentPreview(null);
     
+    // Calculate total remaining amount (exclude deposit)
+    const totalAmountToPay = plan.principalAmount - plan.depositAmount;
+    const totalRemaining = totalAmountToPay - plan.totalPaid;
+    
     // Find first unpaid or partial item
     const unpaidItem = plan.items?.find(item => item.status === 'Pending' || item.status === 'Partial');
     if (unpaidItem) {
+      // Set max amount to total remaining
+      const maxAmount = Math.min(unpaidItem.amountRemaining, totalRemaining);
+      
       form.setFieldsValue({
         installmentPlanId: plan.id,
         installmentItemId: unpaidItem.id,
-        amountPaid: unpaidItem.amountRemaining,
+        amountPaid: maxAmount,
         paidDate: dayjs(),
         paymentMethod: 'Cash',
         status: 'Completed'
       });
-      calculatePaymentPreview(unpaidItem.id, unpaidItem.amountRemaining, plan.items);
+      calculatePaymentPreview(unpaidItem.id, maxAmount, plan.items, totalRemaining);
     }
     
     setIsPaymentModalOpen(true);
   };
 
   // Calculate payment preview
-  const calculatePaymentPreview = (selectedItemId, amount, items) => {
+  const calculatePaymentPreview = (selectedItemId, amount, items, totalRemaining) => {
     if (!amount || amount <= 0 || !items) {
       setPaymentPreview(null);
+      return;
+    }
+
+    // Check if amount exceeds total remaining
+    if (totalRemaining && amount > totalRemaining) {
+      message.warning(`Số tiền vượt quá số còn phải trả (${formatPrice(totalRemaining)})`);
       return;
     }
 
@@ -213,7 +226,11 @@ const PaymentPage = () => {
   const handleAmountChange = (value) => {
     const selectedItemId = form.getFieldValue('installmentItemId');
     if (selectedItemId && selectedPlan?.items) {
-      calculatePaymentPreview(selectedItemId, value, selectedPlan.items);
+      // Calculate total remaining
+      const totalAmountToPay = selectedPlan.principalAmount - selectedPlan.depositAmount;
+      const totalRemaining = totalAmountToPay - selectedPlan.totalPaid;
+      
+      calculatePaymentPreview(selectedItemId, value, selectedPlan.items, totalRemaining);
     }
   };
 
@@ -221,12 +238,17 @@ const PaymentPage = () => {
   const handleItemSelectionChange = (itemId) => {
     const amount = form.getFieldValue('amountPaid');
     if (amount && selectedPlan?.items) {
-      calculatePaymentPreview(itemId, amount, selectedPlan.items);
+      // Calculate total remaining
+      const totalAmountToPay = selectedPlan.principalAmount - selectedPlan.depositAmount;
+      const totalRemaining = totalAmountToPay - selectedPlan.totalPaid;
       
-      // Update amount to selected item's remaining amount
+      calculatePaymentPreview(itemId, amount, selectedPlan.items, totalRemaining);
+      
+      // Update amount to selected item's remaining amount (capped by total remaining)
       const selectedItem = selectedPlan.items.find(item => item.id === itemId);
       if (selectedItem) {
-        form.setFieldValue('amountPaid', selectedItem.amountRemaining);
+        const maxAmount = Math.min(selectedItem.amountRemaining, totalRemaining);
+        form.setFieldValue('amountPaid', maxAmount);
       }
     }
   };
@@ -238,6 +260,15 @@ const PaymentPage = () => {
       
       if (!paymentPreview || paymentPreview.affectedPeriods.length === 0) {
         message.error('Vui lòng nhập số tiền thanh toán hợp lệ');
+        return;
+      }
+
+      // Calculate total remaining to validate payment amount
+      const totalAmountToPay = selectedPlan.principalAmount - selectedPlan.depositAmount;
+      const totalRemaining = totalAmountToPay - selectedPlan.totalPaid;
+      
+      if (values.amountPaid > totalRemaining) {
+        message.error(`Số tiền vượt quá số còn phải trả (${formatPrice(totalRemaining)}). Vui lòng nhập lại!`);
         return;
       }
 
@@ -341,15 +372,15 @@ const PaymentPage = () => {
               });
 
               let orderStatus;
-              if (paymentPercentage >= 100) {
-                // Nếu order đang ở trạng thái Pending-Payment (đã giao xe nhưng chưa thanh toán hết)
-                // thì khi trả xong 100% cập nhật thành Completed
+              if (allPeriodsPaid || paymentPercentage >= 100) {
+                // Trả góp đủ 100% → Completed (nếu đã giao xe) hoặc Paid (chưa giao xe)
                 if (matchingOrder.status === 'Pending-Payment') {
                   orderStatus = 'Completed';
                 } else {
                   orderStatus = 'Paid';
                 }
-              } else if (paymentPercentage >= 50) {
+              } else if (paymentPercentage >= 10) {
+                // Trả đủ 10% principalAmount (không trừ deposit) → Partial-Ready
                 orderStatus = 'Partial-Ready';
               } else if (paymentPercentage > 0) {
                 orderStatus = 'Partial';
@@ -402,8 +433,8 @@ const PaymentPage = () => {
   // Get installment status info
   const getInstallmentStatusInfo = (status) => {
     const statusMap = {
-      Active: { color: 'success', text: 'Hoạt động', icon: <CheckCircleOutlined /> },
-      Completed: { color: 'default', text: 'Hoàn thành', icon: <CheckCircleOutlined /> },
+      Active: { color: 'processing', text: 'Hoạt động', icon: <CheckCircleOutlined /> },
+      Completed: { color: 'success', text: 'Hoàn thành', icon: <CheckCircleOutlined /> },
       Cancelled: { color: 'error', text: 'Đã hủy', icon: <ClockCircleOutlined /> },
       Pending: { color: 'warning', text: 'Chờ xử lý', icon: <ClockCircleOutlined /> }
     };

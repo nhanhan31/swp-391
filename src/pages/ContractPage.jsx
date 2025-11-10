@@ -424,10 +424,10 @@ const ContractPage = () => {
         ContractName: selectedContract.contract_name,
         ContractDate: selectedContract.contract_date,
         Terms: selectedContract.terms,
-        Status: 'Paying'
+        Status: 'Completed'
       });
 
-      // Update order status to 'Paying' as well
+      // Update order status to 'Completed' as well
       if (values.orderId && values.orderId !== 0) {
         try {
           await orderAPI.update(values.orderId, 'Paying');
@@ -441,7 +441,7 @@ const ContractPage = () => {
       // Update local state
       setContracts(contracts.map(c =>
         c.id === selectedContract.id
-          ? { ...c, status: 'paying', updated_at: new Date().toISOString() }
+          ? { ...c, status: 'completed', updated_at: new Date().toISOString() }
           : c
       ));
 

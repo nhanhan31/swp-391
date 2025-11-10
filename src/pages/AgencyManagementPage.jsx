@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -14,8 +14,10 @@ import {
   Input,
   Select,
   Avatar,
+  Upload,
   message,
-  Descriptions
+  Descriptions,
+  Spin
 } from 'antd';
 import {
   ShopOutlined,
@@ -28,24 +30,49 @@ import {
   EditOutlined,
   EyeOutlined,
   MoreOutlined,
-  UserOutlined
+  UserOutlined,
+  UploadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { agencies as mockAgencies } from '../data/mockData';
+import { agencyAPI } from '../services/quotationService';
 
 const { Title, Text } = Typography;
 
 const AgencyManagementPage = () => {
-  const [agencyList, setAgencyList] = useState(mockAgencies);
+  const [agencyList, setAgencyList] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'view'
   const [selectedAgency, setSelectedAgency] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
   const [form] = Form.useForm();
+
+  // Fetch data on mount
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const agencies = await agencyAPI.getAll();
+      console.log('Agencies:', agencies);
+      setAgencyList(agencies || []);
+    } catch (error) {
+      console.error('Error fetching agencies:', error);
+      message.error('Không thể tải danh sách đại lý');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const agencyData = useMemo(() => {
     return agencyList.map(agency => ({
       ...agency,
-      key: agency.id
+      key: agency.id,
+      agency_name: agency.agencyName,
+      created_at: agency.created_At,
+      updated_at: agency.updated_At
     })).sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
   }, [agencyList]);
 
@@ -56,6 +83,7 @@ const AgencyManagementPage = () => {
   const handleCreate = () => {
     setModalMode('create');
     setSelectedAgency(null);
+    setAvatarFile(null);
     form.resetFields();
     setIsModalOpen(true);
   };
@@ -63,6 +91,7 @@ const AgencyManagementPage = () => {
   const handleEdit = (record) => {
     setModalMode('edit');
     setSelectedAgency(record);
+    setAvatarFile(null);
     form.setFieldsValue({
       agency_name: record.agency_name,
       location: record.location,
@@ -80,48 +109,72 @@ const AgencyManagementPage = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then(values => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      
+      // Check if avatar is required
+      if (modalMode === 'create' && !avatarFile) {
+        message.error('Vui lòng tải lên ảnh đại diện đại lý');
+        return;
+      }
+
+      setLoading(true);
+
       if (modalMode === 'create') {
-        const newAgency = {
-          id: agencyList.length + 1,
-          agency_name: values.agency_name,
-          location: values.location,
+        // Create agency via API
+        const createData = {
+          agencyName: values.agency_name,
           address: values.address,
           phone: values.phone,
           email: values.email,
+          location: values.location || '',
           status: values.status,
-          avatar: '/images/agency-default.jpg',
-          created_at: dayjs().toISOString(),
-          updated_at: dayjs().toISOString()
+          avatar: avatarFile
         };
-        setAgencyList([newAgency, ...agencyList]);
-        message.success('Tạo đại lý thành công');
+
+        await agencyAPI.create(createData);
+        message.success('Tạo đại lý mới thành công');
+        
+        // Refresh data
+        await fetchData();
       } else if (modalMode === 'edit') {
-        const updatedList = agencyList.map(agency =>
-          agency.id === selectedAgency.id
-            ? {
-                ...agency,
-                agency_name: values.agency_name,
-                location: values.location,
-                address: values.address,
-                phone: values.phone,
-                email: values.email,
-                status: values.status,
-                updated_at: dayjs().toISOString()
-              }
-            : agency
-        );
-        setAgencyList(updatedList);
+        // Update agency via API
+        const updateData = {
+          agencyName: values.agency_name,
+          address: values.address,
+          phone: values.phone,
+          email: values.email,
+          location: values.location,
+          status: values.status
+        };
+
+        // Add avatar if new file uploaded
+        if (avatarFile) {
+          updateData.avatar = avatarFile;
+        }
+
+        await agencyAPI.update(selectedAgency.id, updateData);
         message.success('Cập nhật đại lý thành công');
+        
+        // Refresh data
+        await fetchData();
       }
+
       form.resetFields();
+      setAvatarFile(null);
       setIsModalOpen(false);
-    }).catch(() => {});
+    } catch (error) {
+      console.error('Error submitting agency:', error);
+      message.error('Lỗi khi lưu thông tin đại lý');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const statusMeta = (status) => {
-    return status === 'active'
+    const statusStr = status?.toLowerCase();
+    return statusStr === 'active'
       ? { color: 'green', text: 'Hoạt động', icon: <CheckCircleOutlined /> }
       : { color: 'red', text: 'Ngừng hoạt động', icon: <CloseCircleOutlined /> };
   };
@@ -223,17 +276,18 @@ const AgencyManagementPage = () => {
 
   return (
     <div className="agency-management-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <ShopOutlined /> Quản lý đại lý
-          </Title>
-          <Text type="secondary">Quản lý thông tin các đại lý VinFast trên toàn quốc</Text>
+      <Spin spinning={loading}>
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <ShopOutlined /> Quản lý đại lý
+            </Title>
+            <Text type="secondary">Quản lý thông tin các đại lý VinFast trên toàn quốc</Text>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+            Thêm đại lý mới
+          </Button>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-          Thêm đại lý mới
-        </Button>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={8}>
@@ -346,6 +400,44 @@ const AgencyManagementPage = () => {
               <Input prefix={<ShopOutlined />} placeholder="VD: VinFast Hà Nội" />
             </Form.Item>
 
+            <Form.Item
+              label="Ảnh đại diện đại lý"
+              required={modalMode === 'create'}
+            >
+              <Upload
+                beforeUpload={(file) => {
+                  const isImage = file.type.startsWith('image/');
+                  if (!isImage) {
+                    message.error('Chỉ được tải lên file ảnh!');
+                    return false;
+                  }
+                  const isLt5M = file.size / 1024 / 1024 < 5;
+                  if (!isLt5M) {
+                    message.error('Kích thước ảnh phải nhỏ hơn 5MB!');
+                    return false;
+                  }
+                  setAvatarFile(file);
+                  return false;
+                }}
+                onRemove={() => {
+                  setAvatarFile(null);
+                }}
+                maxCount={1}
+                listType="picture"
+              >
+                <Button icon={<UploadOutlined />}>
+                  {modalMode === 'create' ? 'Tải lên ảnh (Bắt buộc)' : 'Tải lên ảnh mới'}
+                </Button>
+              </Upload>
+              {modalMode === 'edit' && selectedAgency?.avatar && !avatarFile && (
+                <div style={{ marginTop: '8px' }}>
+                  <Text type="secondary">Ảnh hiện tại:</Text>
+                  <br />
+                  <Avatar size={64} src={selectedAgency.avatar} icon={<ShopOutlined />} />
+                </div>
+              )}
+            </Form.Item>
+
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
@@ -408,6 +500,7 @@ const AgencyManagementPage = () => {
           </Form>
         )}
       </Modal>
+      </Spin>
     </div>
   );
 };

@@ -249,26 +249,80 @@ const DeliveryPage = () => {
                 const installmentPlans = await installmentAPI.getByContractId(matchingContract.id);
                 console.log('Installment plans:', installmentPlans);
                 
-                // 3. Check if any installment plan is not completed
-                const hasUncompletedInstallment = installmentPlans.some(plan => {
-                  const status = plan.status?.toLowerCase();
-                  return status !== 'completed';
-                });
-                
-                if (hasUncompletedInstallment) {
-                  // Has installment plan and not completed yet
-                  newOrderStatus = 'Pending-Payment';
-                  console.log('Customer has uncompleted installment payment, setting status to Pending-Payment');
-                } else if (installmentPlans.length > 0) {
-                  // Has installment plan and all completed
-                  newOrderStatus = 'Completed';
-                  console.log('All installment payments completed, setting status to Completed');
-                } else {
-                  // No installment plan, check order status
-                  if (currentOrderStatus === 'partial-ready') {
+                // 3. Determine payment type and check completion
+                if (installmentPlans.length > 0) {
+                  // HAS INSTALLMENT PLAN - TRẢ GÓP
+                  console.log('Payment type: INSTALLMENT (Trả góp)');
+                  
+                  // Check each installment plan
+                  const hasUncompletedInstallment = installmentPlans.some(plan => {
+                    const status = plan.status?.toLowerCase();
+                    
+                    // Method 1: Check by status
+                    if (status === 'completed') {
+                      return false; // Đã hoàn thành
+                    }
+                    
+                    // Method 2: Check by comparing items vs payments
+                    if (plan.items && plan.payments) {
+                      const totalItems = plan.items.length; // Tổng số kỳ
+                      const paidItems = plan.payments.length; // Số kỳ đã trả
+                      
+                      console.log(`Plan ${plan.id}: ${paidItems}/${totalItems} kỳ đã trả`);
+                      
+                      if (paidItems >= totalItems) {
+                        // Đã trả đủ số kỳ
+                        return false;
+                      }
+                    }
+                    
+                    // Method 3: Check by amount
+                    if (plan.principalAmount && plan.totalPaid) {
+                      const totalAmount = plan.principalAmount;
+                      const paidAmount = plan.totalPaid;
+                      
+                      console.log(`Plan ${plan.id}: Đã trả ${paidAmount}/${totalAmount} VND`);
+                      
+                      if (paidAmount >= totalAmount) {
+                        // Đã trả đủ tiền
+                        return false;
+                      }
+                    }
+                    
+                    // Chưa hoàn thành
+                    return true;
+                  });
+                  
+                  if (hasUncompletedInstallment) {
+                    // Trả góp chưa xong - còn nợ
                     newOrderStatus = 'Pending-Payment';
-                  } else if (currentOrderStatus === 'paid') {
+                    console.log('Installment not completed yet → Setting status to Pending-Payment');
+                  } else {
+                    // Trả góp xong hết
                     newOrderStatus = 'Completed';
+                    console.log('All installment payments completed → Setting status to Completed');
+                  }
+                } else {
+                  // NO INSTALLMENT PLAN - TRẢ THẲNG
+                  console.log('Payment type: FULL PAYMENT (Trả thẳng)');
+                  
+                  // Check if already paid in full
+                  if (currentOrderStatus === 'paid') {
+                    // Đã thanh toán đủ → Hoàn thành
+                    newOrderStatus = 'Completed';
+                    console.log('Already paid in full → Setting status to Completed');
+                  } else if (currentOrderStatus === 'partial-ready') {
+                    // Thanh toán 1 phần trước, còn nợ phần sau
+                    newOrderStatus = 'Pending-Payment';
+                    console.log('Partial payment, waiting for remaining → Setting status to Pending-Payment');
+                  } else if (currentOrderStatus === 'partial') {
+                    // Thanh toán 1 phần nhưng chưa sẵn sàng giao
+                    newOrderStatus = 'Pending-Payment';
+                    console.log('Partial payment → Setting status to Pending-Payment');
+                  } else {
+                    // Chưa thanh toán hoặc status không rõ
+                    newOrderStatus = 'Pending-Payment';
+                    console.log('Payment status unclear → Defaulting to Pending-Payment');
                   }
                 }
               } else {

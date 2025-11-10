@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -14,7 +14,8 @@ import {
   Select,
   InputNumber,
   DatePicker,
-  message
+  message,
+  Spin
 } from 'antd';
 import {
   DollarOutlined,
@@ -28,7 +29,8 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import isBetween from 'dayjs/plugin/isBetween';
-import { vehiclePrices as mockPrices, vehicles, agencies } from '../data/mockData';
+import { vehiclePriceAPI, agencyAPI } from '../services/quotationService';
+import { vehicleAPI } from '../services/vehicleService';
 
 dayjs.extend(isBetween);
 
@@ -36,37 +38,70 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const VehiclePricingPage = () => {
-  const [priceList, setPriceList] = useState(mockPrices);
+  const [priceList, setPriceList] = useState([]);
+  const [vehicleList, setVehicleList] = useState([]);
+  const [agencyList, setAgencyList] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'view'
   const [selectedPrice, setSelectedPrice] = useState(null);
   const [form] = Form.useForm();
 
+  // Fetch data on mount
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch vehicle prices
+      const prices = await vehiclePriceAPI.getAll();
+      console.log('Vehicle Prices:', prices);
+      setPriceList(prices || []);
+
+      // Fetch vehicles
+      const vehicles = await vehicleAPI.getAll();
+      console.log('Vehicles:', vehicles);
+      setVehicleList(vehicles || []);
+
+      // Fetch agencies
+      const agencies = await agencyAPI.getAll();
+      console.log('Agencies:', agencies);
+      setAgencyList(agencies || []);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      message.error('Không thể tải dữ liệu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const priceData = useMemo(() => {
     return priceList.map(price => {
-      const vehicle = vehicles.find(v => v.id === price.vehicle_id);
-      const agency = agencies.find(a => a.id === price.agency_id);
+      const vehicle = vehicleList.find(v => v.id === price.vehicleId);
+      const agency = agencyList.find(a => a.id === price.agencyId);
 
       return {
         id: price.id,
-        vehicle_id: price.vehicle_id,
-        vehicle_name: vehicle?.variant_name || 'Chưa xác định',
+        vehicleId: price.vehicleId,
+        vehicle_name: vehicle?.variantName || 'Chưa xác định',
         vehicle_color: vehicle?.color || '',
-        agency_id: price.agency_id,
-        agency_name: agency?.agency_name || 'Tất cả đại lý',
+        agencyId: price.agencyId,
+        agency_name: agency?.agencyName || 'Tất cả đại lý',
         agency_location: agency?.location || '',
-        price_type: price.price_type,
-        price_amount: price.price_amount,
-        start_date: price.start_date,
-        end_date: price.end_date
+        priceType: price.priceType,
+        priceAmount: price.priceAmount,
+        startDate: price.startDate,
+        endDate: price.endDate
       };
-    }).sort((a, b) => dayjs(b.start_date).valueOf() - dayjs(a.start_date).valueOf());
-  }, [priceList]);
+    }).sort((a, b) => dayjs(b.startDate).valueOf() - dayjs(a.startDate).valueOf());
+  }, [priceList, vehicleList, agencyList]);
 
   const totalPriceRecords = priceData.length;
-  const activePrices = priceData.filter(p => dayjs().isBetween(dayjs(p.start_date), dayjs(p.end_date), null, '[]')).length;
-  const retailPrices = priceData.filter(p => p.price_type === 'retail').length;
-  const wholesalePrices = priceData.filter(p => p.price_type === 'wholesale').length;
+  const activePrices = priceData.filter(p => dayjs().isBetween(dayjs(p.startDate), dayjs(p.endDate), null, '[]')).length;
+  const retailPrices = priceData.filter(p => p.priceType?.toLowerCase() === 'retail').length;
+  const wholesalePrices = priceData.filter(p => p.priceType?.toLowerCase() === 'wholesale').length;
 
   const handleCreate = () => {
     setModalMode('create');
@@ -79,11 +114,11 @@ const VehiclePricingPage = () => {
     setModalMode('edit');
     setSelectedPrice(record);
     form.setFieldsValue({
-      vehicle_id: record.vehicle_id,
-      agency_id: record.agency_id,
-      price_type: record.price_type,
-      price_amount: record.price_amount,
-      date_range: [dayjs(record.start_date), dayjs(record.end_date)]
+      vehicleId: record.vehicleId,
+      agencyId: record.agencyId,
+      priceType: record.priceType,
+      priceAmount: record.priceAmount,
+      date_range: [dayjs(record.startDate), dayjs(record.endDate)]
     });
     setIsModalOpen(true);
   };
@@ -94,46 +129,58 @@ const VehiclePricingPage = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then(values => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+
+      const priceData = {
+        vehicleId: values.vehicleId,
+        agencyId: values.agencyId,
+        priceType: values.priceType,
+        priceAmount: values.priceAmount,
+        startDate: values.date_range[0].format('YYYY-MM-DDTHH:mm:ss.SSS[Z]'),
+        endDate: values.date_range[1].format('YYYY-MM-DDTHH:mm:ss.SSS[Z]')
+      };
+
       if (modalMode === 'create') {
-        const newPrice = {
-          id: priceList.length + 1,
-          vehicle_id: values.vehicle_id,
-          agency_id: values.agency_id,
-          price_type: values.price_type,
-          price_amount: values.price_amount,
-          start_date: values.date_range[0].format('YYYY-MM-DD'),
-          end_date: values.date_range[1].format('YYYY-MM-DD')
-        };
-        setPriceList([newPrice, ...priceList]);
+        await vehiclePriceAPI.create(priceData);
         message.success('Tạo bảng giá thành công');
       } else if (modalMode === 'edit') {
-        const updatedList = priceList.map(price =>
-          price.id === selectedPrice.id
-            ? {
-                ...price,
-                vehicle_id: values.vehicle_id,
-                agency_id: values.agency_id,
-                price_type: values.price_type,
-                price_amount: values.price_amount,
-                start_date: values.date_range[0].format('YYYY-MM-DD'),
-                end_date: values.date_range[1].format('YYYY-MM-DD')
-              }
-            : price
-        );
-        setPriceList(updatedList);
-        message.success('Cập nhật giá thành công');
+        await vehiclePriceAPI.update(selectedPrice.id, priceData);
+        message.success('Cập nhật bảng giá thành công');
       }
+
+      await fetchData();
       form.resetFields();
       setIsModalOpen(false);
-    }).catch(() => {});
+    } catch (error) {
+      console.error('Error submitting price:', error);
+      message.error('Lỗi khi lưu bảng giá');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (record) => {
+    try {
+      setLoading(true);
+      await vehiclePriceAPI.delete(record.id);
+      message.success('Xóa bảng giá thành công');
+      await fetchData();
+    } catch (error) {
+      console.error('Error deleting price:', error);
+      message.error('Lỗi khi xóa bảng giá');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const priceTypeTag = (type) => {
-    return type === 'retail' 
+    const typeStr = type?.toLowerCase();
+    return typeStr === 'retail' 
       ? <Tag color="blue">Giá lẻ</Tag>
-      : <Tag color="green">Giá sỉ</Tag>;
+      : <Tag color="green">Giá sỉ (Wholesale)</Tag>;
   };
 
   const columns = [
@@ -169,34 +216,34 @@ const VehiclePricingPage = () => {
     },
     {
       title: 'Loại giá',
-      dataIndex: 'price_type',
-      key: 'price_type',
-      width: 100,
+      dataIndex: 'priceType',
+      key: 'priceType',
+      width: 130,
       render: (type) => priceTypeTag(type)
     },
     {
       title: 'Giá bán',
-      dataIndex: 'price_amount',
-      key: 'price_amount',
+      dataIndex: 'priceAmount',
+      key: 'priceAmount',
       width: 150,
       render: (amount) => (
         <Text strong style={{ color: '#1890ff' }}>
           {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount)}
         </Text>
       ),
-      sorter: (a, b) => a.price_amount - b.price_amount
+      sorter: (a, b) => a.priceAmount - b.priceAmount
     },
     {
       title: 'Ngày bắt đầu',
-      dataIndex: 'start_date',
-      key: 'start_date',
+      dataIndex: 'startDate',
+      key: 'startDate',
       width: 120,
       render: (date) => dayjs(date).format('DD/MM/YYYY')
     },
     {
       title: 'Ngày kết thúc',
-      dataIndex: 'end_date',
-      key: 'end_date',
+      dataIndex: 'endDate',
+      key: 'endDate',
       width: 120,
       render: (date) => dayjs(date).format('DD/MM/YYYY')
     },
@@ -206,7 +253,7 @@ const VehiclePricingPage = () => {
       width: 120,
       render: (_, record) => {
         const now = dayjs();
-        const isActive = now.isBetween(dayjs(record.start_date), dayjs(record.end_date), null, '[]');
+        const isActive = now.isBetween(dayjs(record.startDate), dayjs(record.endDate), null, '[]');
         return isActive 
           ? <Tag color="green">Đang áp dụng</Tag>
           : <Tag color="gray">Hết hạn</Tag>;
@@ -244,17 +291,18 @@ const VehiclePricingPage = () => {
 
   return (
     <div className="vehicle-pricing-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <DollarOutlined /> Quản lý giá bán sỉ
-          </Title>
-          <Text type="secondary">Quản lý bảng giá xe điện cho các đại lý</Text>
+      <Spin spinning={loading}>
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <DollarOutlined /> Quản lý giá bán sỉ (Wholesale Price)
+            </Title>
+            <Text type="secondary">Quản lý bảng giá xe điện cho các đại lý</Text>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+            Tạo bảng giá mới
+          </Button>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-          Tạo bảng giá mới
-        </Button>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
@@ -341,69 +389,81 @@ const VehiclePricingPage = () => {
               </Col>
               <Col span={12}>
                 <Text type="secondary">Loại giá</Text>
-                <div>{priceTypeTag(selectedPrice.price_type)}</div>
+                <div>{priceTypeTag(selectedPrice.priceType)}</div>
               </Col>
               <Col span={12}>
                 <Text type="secondary">Giá bán</Text>
                 <div>
                   <Text strong style={{ color: '#1890ff', fontSize: '16px' }}>
-                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(selectedPrice.price_amount)}
+                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(selectedPrice.priceAmount)}
                   </Text>
                 </div>
               </Col>
               <Col span={12}>
                 <Text type="secondary">Ngày bắt đầu</Text>
-                <div><Text strong>{dayjs(selectedPrice.start_date).format('DD/MM/YYYY')}</Text></div>
+                <div><Text strong>{dayjs(selectedPrice.startDate).format('DD/MM/YYYY')}</Text></div>
               </Col>
               <Col span={12}>
                 <Text type="secondary">Ngày kết thúc</Text>
-                <div><Text strong>{dayjs(selectedPrice.end_date).format('DD/MM/YYYY')}</Text></div>
+                <div><Text strong>{dayjs(selectedPrice.endDate).format('DD/MM/YYYY')}</Text></div>
               </Col>
             </Row>
           </div>
         ) : (
           <Form form={form} layout="vertical">
             <Form.Item
-              name="vehicle_id"
+              name="vehicleId"
               label="Phiên bản xe"
               rules={[{ required: true, message: 'Vui lòng chọn phiên bản' }]}
             >
-              <Select placeholder="Chọn phiên bản xe">
-                {vehicles.map(vehicle => (
-                  <Select.Option key={vehicle.id} value={vehicle.id}>
-                    {vehicle.variant_name} - {vehicle.color}
+              <Select placeholder="Chọn phiên bản xe" showSearch filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }>
+                {vehicleList.map(vehicle => (
+                  <Select.Option 
+                    key={vehicle.id} 
+                    value={vehicle.id}
+                    label={`${vehicle.variantName} - ${vehicle.color}`}
+                  >
+                    {vehicle.variantName} - {vehicle.color}
                   </Select.Option>
                 ))}
               </Select>
             </Form.Item>
 
             <Form.Item
-              name="agency_id"
+              name="agencyId"
               label="Đại lý áp dụng"
               rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
             >
-              <Select placeholder="Chọn đại lý">
-                {agencies.map(agency => (
-                  <Select.Option key={agency.id} value={agency.id}>
-                    {agency.agency_name} - {agency.location}
+              <Select placeholder="Chọn đại lý" showSearch filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }>
+                {agencyList.map(agency => (
+                  <Select.Option 
+                    key={agency.id} 
+                    value={agency.id}
+                    label={`${agency.agencyName} - ${agency.location}`}
+                  >
+                    {agency.agencyName} - {agency.location}
                   </Select.Option>
                 ))}
               </Select>
             </Form.Item>
 
             <Form.Item
-              name="price_type"
+              name="priceType"
               label="Loại giá"
               rules={[{ required: true, message: 'Vui lòng chọn loại giá' }]}
             >
               <Select placeholder="Chọn loại giá">
-                <Select.Option value="retail">Giá lẻ</Select.Option>
-                <Select.Option value="wholesale">Giá sỉ</Select.Option>
+                <Select.Option value="Retail">Giá lẻ</Select.Option>
+                <Select.Option value="Wholesale">Giá sỉ (Wholesale)</Select.Option>
               </Select>
             </Form.Item>
 
             <Form.Item
-              name="price_amount"
+              name="priceAmount"
               label="Giá bán (VNĐ)"
               rules={[{ required: true, message: 'Vui lòng nhập giá bán' }]}
             >
@@ -427,6 +487,7 @@ const VehiclePricingPage = () => {
           </Form>
         )}
       </Modal>
+      </Spin>
     </div>
   );
 };
