@@ -43,6 +43,7 @@ import UsersPage from '../pages/UsersPage';
 import RolesPage from '../pages/RolesPage';
 import UnauthorizedPage from '../pages/UnauthorizedPage';
 import LandingPage from '../pages/LandingPage';
+import DemandForecast from '../components/DemandForecast';
 
 const AppRoutes = () => {
     return (
@@ -251,6 +252,10 @@ const AppRoutes = () => {
                         <Route
                             path="reports/agency-debts"
                             element={<AgencyDebtReportPage />}
+                        />
+                        <Route
+                            path="reports/prediction"
+                            element={<DemandForecast />}
                         />
                     </Route>
 
