@@ -21,8 +21,8 @@ import {
 
 const { Title, Text } = Typography;
 
-// const PREDICTION_API_URL = "https://analytic.agencymanagement.online/api/Prediction/demand";
-const PREDICTION_API_URL = "https://localhost:7127/api/Prediction/demand";
+const PREDICTION_API_URL = "https://analytic.agencymanagement.online/api/Prediction/demand";
+// const PREDICTION_API_URL = "https://localhost:7127/api/Prediction/demand";
 
 const defaultFormState = {
     year: new Date().getFullYear(),
