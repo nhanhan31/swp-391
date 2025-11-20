@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -15,7 +15,9 @@ import {
   Select,
   Avatar,
   message,
-  Descriptions
+  Descriptions,
+  Spin,
+  Upload
 } from 'antd';
 import {
   UserOutlined,
@@ -30,55 +32,115 @@ import {
   EyeOutlined,
   MoreOutlined,
   ShopOutlined,
-  SafetyOutlined
+  SafetyOutlined,
+  UploadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { users as mockUsers, agencies, roles } from '../data/mockData';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+
+const USER_API = 'https://user.agencymanagement.online/api';
+const AGENCY_API = 'https://agency.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
 const { Password } = Input;
 
 const AgencyAccountPage = () => {
-  const [userList, setUserList] = useState(mockUsers.filter(u => u.agency_id !== null));
+  const { currentUser } = useAuth();
+  const [userList, setUserList] = useState([]);
+  const [agencies, setAgencies] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'view'
   const [selectedUser, setSelectedUser] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
   const [form] = Form.useForm();
+
+  // Fetch agencies
+  useEffect(() => {
+    const fetchAgencies = async () => {
+      try {
+        const response = await axios.get(`${AGENCY_API}/Agency`, {
+          headers: {
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+        setAgencies(response.data || []);
+      } catch (error) {
+        console.error('Error fetching agencies:', error);
+        message.error('Không thể tải danh sách đại lý');
+      }
+    };
+
+    fetchAgencies();
+  }, []);
+
+  // Fetch users
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(`${USER_API}/User`, {
+          headers: {
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+        
+        console.log('All users:', response.data);
+        console.log('Sample user:', response.data[0]);
+        
+        // Filter only agency users (AgencyManager and AgencyStaff)
+        const agencyUsers = (response.data || []).filter(user => 
+          user.role?.roleName === 'AgencyManager' || user.role?.roleName === 'AgencyStaff'
+        );
+        
+        console.log('Filtered agency users:', agencyUsers);
+        
+        setUserList(agencyUsers);
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        message.error('Không thể tải danh sách người dùng');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
 
   const userData = useMemo(() => {
     return userList.map(user => {
-      const agency = agencies.find(a => a.id === user.agency_id);
-      const role = roles.find(r => r.id === user.role_id);
+      const agency = agencies.find(a => a.id === user.agencyId);
 
       return {
         id: user.id,
-        username: user.username,
-        full_name: user.full_name,
+        username: user.userName,
+        full_name: user.fullName,
         email: user.email,
         phone: user.phone,
-        avatar_url: user.avatar_url,
+        avatar_url: user.avartarUrl,
         status: user.status,
-        role_id: user.role_id,
-        role_name: role?.role_name || 'Chưa xác định',
-        agency_id: user.agency_id,
-        agency_name: agency?.agency_name || 'Chưa xác định',
+        role_name: user.role?.roleName,
+        role_id: user.role?.id,
+        agency_id: user.agencyId,
+        agency_name: agency?.agencyName || 'Chưa xác định',
         agency_location: agency?.location || '',
-        created_at: user.created_at,
-        updated_at: user.updated_at,
-        created_by: user.created_by
+        created_at: user.created_At,
+        updated_at: user.updated_At
       };
     }).sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
-  }, [userList]);
+  }, [userList, agencies]);
 
   const totalAccounts = userData.length;
-  const activeAccounts = userData.filter(u => u.status === 'active').length;
-  const inactiveAccounts = userData.filter(u => u.status === 'inactive').length;
-  const managerAccounts = userData.filter(u => u.role_id === 3).length;
+  const activeAccounts = userData.filter(u => u.status === 'Active').length;
+  const inactiveAccounts = userData.filter(u => u.status === 'Inactive').length;
+  const managerAccounts = userData.filter(u => u.role_name === 'AgencyManager').length;
 
   const handleCreate = () => {
     setModalMode('create');
     setSelectedUser(null);
     form.resetFields();
+    setAvatarFile(null);
     setIsModalOpen(true);
   };
 
@@ -86,14 +148,12 @@ const AgencyAccountPage = () => {
     setModalMode('edit');
     setSelectedUser(record);
     form.setFieldsValue({
-      username: record.username,
       full_name: record.full_name,
       email: record.email,
       phone: record.phone,
-      role_id: record.role_id,
-      agency_id: record.agency_id,
       status: record.status
     });
+    setAvatarFile(null);
     setIsModalOpen(true);
   };
 
@@ -103,62 +163,156 @@ const AgencyAccountPage = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then(values => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+
       if (modalMode === 'create') {
-        const newUser = {
-          id: mockUsers.length + 1,
-          username: values.username,
-          password_hash: 'hashedpassword123',
-          full_name: values.full_name,
-          email: values.email,
-          phone: values.phone,
-          avatar_url: '/images/avatar-default.jpg',
-          status: values.status,
-          role_id: values.role_id,
-          agency_id: values.agency_id,
-          created_at: dayjs().toISOString(),
-          updated_at: dayjs().toISOString(),
-          created_by: 1
-        };
-        setUserList([newUser, ...userList]);
+        const formData = new FormData();
+        formData.append('UserName', values.username);
+        formData.append('Password', values.password);
+        formData.append('FullName', values.full_name);
+        formData.append('Email', values.email);
+        formData.append('RoleId', values.role_id);
+        formData.append('Phone', values.phone);
+        formData.append('CreateBy', currentUser?.id || 1);
+        
+        if (avatarFile) {
+          formData.append('AvatarFile', avatarFile);
+        }
+
+        await axios.post(
+          `${USER_API}/User`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
+        );
+
         message.success('Tạo tài khoản thành công');
       } else if (modalMode === 'edit') {
-        const updatedList = userList.map(user =>
-          user.id === selectedUser.id
-            ? {
-                ...user,
-                username: values.username,
-                full_name: values.full_name,
-                email: values.email,
-                phone: values.phone,
-                role_id: values.role_id,
-                agency_id: values.agency_id,
-                status: values.status,
-                updated_at: dayjs().toISOString()
-              }
-            : user
+        const formData = new FormData();
+        formData.append('FullName', values.full_name);
+        formData.append('Email', values.email);
+        formData.append('Phone', values.phone);
+        formData.append('Status', values.status);
+        formData.append('RoleId', selectedUser.role_id);
+        
+        if (avatarFile) {
+          formData.append('AvatarFile', avatarFile);
+        }
+
+        await axios.put(
+          `${USER_API}/User/${selectedUser.id}`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
         );
-        setUserList(updatedList);
+
         message.success('Cập nhật tài khoản thành công');
       }
+        
+      // Refresh user list
+      const response = await axios.get(`${USER_API}/User`, {
+        headers: {
+          'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+        }
+      });
+      const agencyUsers = (response.data || []).filter(user => 
+        user.role?.roleName === 'AgencyManager' || user.role?.roleName === 'AgencyStaff'
+      );
+      setUserList(agencyUsers);
+
       form.resetFields();
+      setAvatarFile(null);
       setIsModalOpen(false);
-    }).catch(() => {});
+    } catch (error) {
+      console.error('Error submitting user:', error);
+      message.error('Không thể lưu thông tin tài khoản');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (userId) => {
+    Modal.confirm({
+      title: 'Đổi mật khẩu',
+      content: (
+        <Form
+          id="change-password-form"
+          layout="vertical"
+          onFinish={async (values) => {
+            try {
+              await axios.post(
+                `${USER_API}/User/change-password/${userId}`,
+                {
+                  currentPassword: values.currentPassword,
+                  newPassword: values.newPassword
+                },
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                  }
+                }
+              );
+              message.success('Đổi mật khẩu thành công');
+              Modal.destroyAll();
+            } catch (error) {
+              console.error('Error changing password:', error);
+              message.error('Không thể đổi mật khẩu');
+            }
+          }}
+        >
+          <Form.Item
+            name="currentPassword"
+            label="Mật khẩu hiện tại"
+            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại' }]}
+          >
+            <Password />
+          </Form.Item>
+          <Form.Item
+            name="newPassword"
+            label="Mật khẩu mới"
+            rules={[
+              { required: true, message: 'Vui lòng nhập mật khẩu mới' },
+              { min: 6, message: 'Mật khẩu phải có ít nhất 6 ký tự' }
+            ]}
+          >
+            <Password />
+          </Form.Item>
+        </Form>
+      ),
+      okText: 'Đổi mật khẩu',
+      cancelText: 'Hủy',
+      onOk: () => {
+        document.getElementById('change-password-form').dispatchEvent(
+          new Event('submit', { cancelable: true, bubbles: true })
+        );
+      }
+    });
   };
 
   const statusMeta = (status) => {
-    return status === 'active'
+    return status === 'Active'
       ? { color: 'green', text: 'Hoạt động', icon: <CheckCircleOutlined /> }
       : { color: 'red', text: 'Ngừng hoạt động', icon: <CloseCircleOutlined /> };
   };
 
-  const roleTag = (roleId) => {
-    switch (roleId) {
-      case 3:
-        return <Tag color="blue" icon={<SafetyOutlined />}>Dealer Manager</Tag>;
-      case 4:
-        return <Tag color="cyan" icon={<UserOutlined />}>Dealer Staff</Tag>;
+  const roleTag = (roleName) => {
+    switch (roleName) {
+      case 'AgencyManager':
+        return <Tag color="blue" icon={<SafetyOutlined />}>Agency Manager</Tag>;
+      case 'AgencyStaff':
+        return <Tag color="cyan" icon={<UserOutlined />}>Agency Staff</Tag>;
       default:
         return <Tag color="default">Khác</Tag>;
     }
@@ -213,15 +367,15 @@ const AgencyAccountPage = () => {
     },
     {
       title: 'Vai trò',
-      dataIndex: 'role_id',
-      key: 'role_id',
+      dataIndex: 'role_name',
+      key: 'role_name',
       width: 150,
-      render: (roleId) => roleTag(roleId),
+      render: (roleName) => roleTag(roleName),
       filters: [
-        { text: 'Dealer Manager', value: 3 },
-        { text: 'Dealer Staff', value: 4 }
+        { text: 'Agency Manager', value: 'AgencyManager' },
+        { text: 'Agency Staff', value: 'AgencyStaff' }
       ],
-      onFilter: (value, record) => record.role_id === value
+      onFilter: (value, record) => record.role_name === value
     },
     {
       title: 'Trạng thái',
@@ -233,8 +387,8 @@ const AgencyAccountPage = () => {
         return <Tag color={meta.color} icon={meta.icon}>{meta.text}</Tag>;
       },
       filters: [
-        { text: 'Hoạt động', value: 'active' },
-        { text: 'Ngừng hoạt động', value: 'inactive' }
+        { text: 'Hoạt động', value: 'Active' },
+        { text: 'Ngừng hoạt động', value: 'Inactive' }
       ],
       onFilter: (value, record) => record.status === value
     },
@@ -263,6 +417,12 @@ const AgencyAccountPage = () => {
             icon: <EditOutlined />,
             label: 'Chỉnh sửa',
             onClick: () => handleEdit(record)
+          },
+          {
+            key: 'password',
+            icon: <LockOutlined />,
+            label: 'Đổi mật khẩu',
+            onClick: () => handleChangePassword(record.id)
           }
         ];
 
@@ -276,18 +436,19 @@ const AgencyAccountPage = () => {
   ];
 
   return (
-    <div className="agency-account-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <TeamOutlined /> Quản lý tài khoản đại lý
-          </Title>
-          <Text type="secondary">Quản lý tài khoản người dùng của các đại lý trên hệ thống</Text>
+    <Spin spinning={loading}>
+      <div className="agency-account-page">
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <TeamOutlined /> Quản lý tài khoản đại lý
+            </Title>
+            <Text type="secondary">Quản lý tài khoản người dùng của các đại lý trên hệ thống</Text>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+            Tạo tài khoản mới
+          </Button>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-          Tạo tài khoản mới
-        </Button>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
@@ -323,7 +484,7 @@ const AgencyAccountPage = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Dealer Manager"
+              title="Agency Manager"
               value={managerAccounts}
               prefix={<SafetyOutlined />}
               valueStyle={{ color: '#1890ff' }}
@@ -377,7 +538,7 @@ const AgencyAccountPage = () => {
                     <Text type="secondary">{selectedUser.agency_location}</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="Vai trò">
-                    {roleTag(selectedUser.role_id)}
+                    {roleTag(selectedUser.role_name)}
                   </Descriptions.Item>
                   <Descriptions.Item label="Email">
                     <MailOutlined style={{ marginRight: '8px' }} />
@@ -405,22 +566,8 @@ const AgencyAccountPage = () => {
           </div>
         ) : (
           <Form form={form} layout="vertical">
-            <Form.Item
-              name="agency_id"
-              label="Đại lý"
-              rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
-            >
-              <Select placeholder="Chọn đại lý" suffixIcon={<ShopOutlined />}>
-                {agencies.map(agency => (
-                  <Select.Option key={agency.id} value={agency.id}>
-                    {agency.agency_name} - {agency.location}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-
-            <Row gutter={16}>
-              <Col span={12}>
+            {modalMode === 'create' && (
+              <>
                 <Form.Item
                   name="username"
                   label="Tên đăng nhập"
@@ -431,20 +578,30 @@ const AgencyAccountPage = () => {
                 >
                   <Input prefix={<UserOutlined />} placeholder="VD: staff_hanoi" />
                 </Form.Item>
-              </Col>
-              <Col span={12}>
+
+                <Form.Item
+                  name="password"
+                  label="Mật khẩu"
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập mật khẩu' },
+                    { min: 6, message: 'Mật khẩu phải có ít nhất 6 ký tự' }
+                  ]}
+                >
+                  <Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu" />
+                </Form.Item>
+
                 <Form.Item
                   name="role_id"
                   label="Vai trò"
                   rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
                 >
                   <Select placeholder="Chọn vai trò">
-                    <Select.Option value={3}>Dealer Manager</Select.Option>
-                    <Select.Option value={4}>Dealer Staff</Select.Option>
+                    <Select.Option value={4}>Agency Manager</Select.Option>
+                    <Select.Option value={5}>Agency Staff</Select.Option>
                   </Select>
                 </Form.Item>
-              </Col>
-            </Row>
+              </>
+            )}
 
             <Form.Item
               name="full_name"
@@ -481,34 +638,50 @@ const AgencyAccountPage = () => {
               </Col>
             </Row>
 
-            {modalMode === 'create' && (
-              <Form.Item
-                name="password"
-                label="Mật khẩu"
-                rules={[
-                  { required: true, message: 'Vui lòng nhập mật khẩu' },
-                  { min: 6, message: 'Mật khẩu phải có ít nhất 6 ký tự' }
-                ]}
+            <Form.Item
+              name="avatarFile"
+              label="Ảnh đại diện"
+            >
+              <Upload
+                beforeUpload={(file) => {
+                  const isImage = file.type.startsWith('image/');
+                  if (!isImage) {
+                    message.error('Chỉ được tải lên file hình ảnh!');
+                  }
+                  const isLt5M = file.size / 1024 / 1024 < 5;
+                  if (!isLt5M) {
+                    message.error('Hình ảnh phải nhỏ hơn 5MB!');
+                  }
+                  if (isImage && isLt5M) {
+                    setAvatarFile(file);
+                  }
+                  return false;
+                }}
+                maxCount={1}
+                listType="picture"
               >
-                <Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu" />
+                <Button icon={<UploadOutlined />}>Chọn ảnh đại diện</Button>
+              </Upload>
+            </Form.Item>
+
+            {modalMode === 'edit' && (
+              <Form.Item
+                name="status"
+                label="Trạng thái"
+                initialValue="Active"
+                rules={[{ required: true, message: 'Vui lòng chọn trạng thái' }]}
+              >
+                <Select>
+                  <Select.Option value="Active">Hoạt động</Select.Option>
+                  <Select.Option value="Inactive">Ngừng hoạt động</Select.Option>
+                </Select>
               </Form.Item>
             )}
-
-            <Form.Item
-              name="status"
-              label="Trạng thái"
-              initialValue="active"
-              rules={[{ required: true, message: 'Vui lòng chọn trạng thái' }]}
-            >
-              <Select>
-                <Select.Option value="active">Hoạt động</Select.Option>
-                <Select.Option value="inactive">Ngừng hoạt động</Select.Option>
-              </Select>
-            </Form.Item>
           </Form>
         )}
       </Modal>
     </div>
+    </Spin>
   );
 };
 

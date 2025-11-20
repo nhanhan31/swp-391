@@ -57,7 +57,7 @@ const MainLayout = () => {
     // Menu cho Admin
     if (isAdmin()) {
       return [
-        ...commonItems,
+        //...commonItems,
         {
           key: 'vehicles-management',
           icon: <CarOutlined />,
@@ -65,8 +65,8 @@ const MainLayout = () => {
           children: [
             { key: '/vehicles', label: 'Danh mục xe' },
             { key: '/vehicles/inventory', label: 'Tồn kho tổng' },
-            { key: '/vehicles/prices', label: 'Quản lý giá' },
-            { key: '/vehicles/promotions', label: 'Khuyến mãi' }
+            // { key: '/vehicles/prices', label: 'Quản lý giá' },
+            // { key: '/vehicles/promotions', label: 'Khuyến mãi' }
           ]
         },
         {
@@ -82,15 +82,15 @@ const MainLayout = () => {
             { key: '/agencies/accounts', label: 'Tài khoản đại lý' }
           ]
         },
-        {
-          key: 'users-management',
-          icon: <TeamOutlined />,
-          label: 'Quản lý người dùng',
-          children: [
-            { key: '/users', label: 'Danh sách người dùng' },
-            { key: '/roles', label: 'Phân quyền' }
-          ]
-        },
+        // {
+        //   key: 'users-management',
+        //   icon: <TeamOutlined />,
+        //   label: 'Quản lý người dùng',
+        //   children: [
+        //     { key: '/users', label: 'Danh sách người dùng' },
+        //     { key: '/roles', label: 'Phân quyền' }
+        //   ]
+        // },
         {
           key: 'reports-admin',
           icon: <BarChartOutlined />,
@@ -99,7 +99,8 @@ const MainLayout = () => {
             { key: '/reports/sales-by-region', label: 'Doanh số theo khu vực' },
             { key: '/reports/sales-by-agency', label: 'Doanh số theo đại lý' },
             { key: '/reports/inventory', label: 'Tồn kho' },
-            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' }
+            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' },
+            { key: '/reports/prediction', label: 'Dự báo kế hoạch' }
           ]
         }
       ];
@@ -108,7 +109,7 @@ const MainLayout = () => {
     // Menu cho EVM Staff
     if (isEVMStaff()) {
       return [
-        ...commonItems,
+        // ...commonItems,
         {
           key: 'vehicles-management',
           icon: <CarOutlined />,
@@ -118,6 +119,7 @@ const MainLayout = () => {
             { key: '/vehicles/management', label: 'Quản lý model & variant' },
             { key: '/vehicles/inventory', label: 'Tồn kho tổng' },
             { key: '/vehicles/allocation', label: 'Điều phối xe' }
+
           ]
         },
         {
@@ -151,7 +153,8 @@ const MainLayout = () => {
             { key: '/reports/sales-by-region', label: 'Doanh số theo khu vực' },
             { key: '/reports/sales-by-agency', label: 'Doanh số theo đại lý' },
             { key: '/reports/inventory', label: 'Tồn kho' },
-            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' }
+            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' },
+            { key: '/reports/prediction', label: 'Dự báo kế hoạch' }
           ]
         }
       ];
@@ -168,6 +171,7 @@ const MainLayout = () => {
           children: [
             { key: '/agencies/contracts', label: 'Hợp đồng đại lý' },
             { key: '/agencies/orders', label: 'Đơn nhập xe' },
+            { key: '/agencies/payments', label: 'Thanh toán đơn hàng' },
             { key: '/agencies/targets', label: 'Chỉ tiêu doanh số' }
           ]
         },
@@ -177,7 +181,8 @@ const MainLayout = () => {
           label: 'Thông tin xe',
           children: [
             { key: '/vehicles/catalog', label: 'Danh mục xe' },
-            { key: '/vehicles/compare', label: 'So sánh xe' }
+            { key: '/vehicles/compare', label: 'So sánh xe' },
+            // { key: '/vehicles/price', label: 'Bảng giá' }
           ]
         },
         {
@@ -226,7 +231,7 @@ const MainLayout = () => {
           children: [
             { key: '/vehicles/catalog', label: 'Danh mục xe' },
             { key: '/vehicles/compare', label: 'So sánh xe' },
-           
+
           ]
         },
         {
@@ -252,7 +257,7 @@ const MainLayout = () => {
             { key: '/customers/feedback', label: 'Phản hồi & Khiếu nại' }
           ]
         },
-        
+
       ];
 
       // Dealer Manager có thêm menu báo cáo
@@ -315,9 +320,9 @@ const MainLayout = () => {
 
   return (
     <Layout className="main-layout">
-      <Sider 
-        trigger={null} 
-        collapsible 
+      <Sider
+        trigger={null}
+        collapsible
         collapsed={collapsed}
         className="main-sidebar"
         width={260}
@@ -332,7 +337,7 @@ const MainLayout = () => {
             <CarOutlined className="logo-collapsed" />
           )}
         </div>
-        
+
         <Menu
           theme="dark"
           mode="inline"
@@ -356,7 +361,7 @@ const MainLayout = () => {
 
           <div className="header-right">
             <Space size="large">
-              
+
 
               <Dropdown
                 menu={{
@@ -368,8 +373,8 @@ const MainLayout = () => {
               >
                 <div className="user-info">
                   <Space>
-                    <Avatar 
-                      src={currentUser?.avatar_url} 
+                    <Avatar
+                      src={currentUser?.avatar_url}
                       icon={<UserOutlined />}
                       size="default"
                     />

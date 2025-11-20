@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -16,7 +16,8 @@ import {
   DatePicker,
   message,
   Progress,
-  Descriptions
+  Descriptions,
+  Spin
 } from 'antd';
 import {
   TrophyOutlined,
@@ -32,22 +33,138 @@ import {
   CalendarOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { agencyTargets as mockTargets, agencies } from '../data/mockData';
+import { useAuth } from '../context/AuthContext';
+import { agencyAPI, deliveryAPI } from '../services/quotationService';
+import axios from 'axios';
 
 const { Title, Text } = Typography;
 
+const AGENCY_API = 'https://agency.agencymanagement.online/api';
+
 const AgencyTargetPage = () => {
-  const [targetList, setTargetList] = useState(mockTargets);
+  const { currentUser, isDealerManager, getAgencyId } = useAuth();
+  
+  const [targetList, setTargetList] = useState([]);
+  const [agencies, setAgencies] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'view'
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [form] = Form.useForm();
 
+  // Check if user is EVStaff or Admin
+  const isEVStaffOrAdmin = () => {
+    return currentUser?.role === 'EVStaff' || currentUser?.role === 'Admin';
+  };
+
+  // Fetch agencies
+  useEffect(() => {
+    const fetchAgencies = async () => {
+      try {
+        const agenciesData = await agencyAPI.getAll();
+        setAgencies(agenciesData || []);
+      } catch (error) {
+        console.error('Error fetching agencies:', error);
+      }
+    };
+    fetchAgencies();
+  }, []);
+
+  // Fetch targets and auto-update achievedSales
+  useEffect(() => {
+    const fetchTargets = async () => {
+      setLoading(true);
+      try {
+        let targetsData = [];
+        const agencyId = getAgencyId();
+
+        // Fetch targets based on role
+        if (isEVStaffOrAdmin()) {
+          // EVStaff & Admin: Get all targets
+          const response = await axios.get(`${AGENCY_API}/AgencyTarget/targets`, {
+            params: {
+              TargetYear: dayjs().year(),
+              TargetMonth: dayjs().month() + 1
+            }
+          });
+          targetsData = response.data || [];
+        } else if (isDealerManager() && agencyId) {
+          // AgencyManager: Get targets for this agency only
+          const response = await axios.get(`${AGENCY_API}/AgencyTarget/Agency/${agencyId}/target`, {
+            params: {
+              TargetYear: dayjs().year(),
+              TargetMonth: dayjs().month() + 1
+            }
+          });
+          targetsData = Array.isArray(response.data) ? response.data : [response.data];
+        }
+
+        console.log('Fetched targets:', targetsData);
+        console.log('Sample target structure:', targetsData[0]);
+
+        // Auto-update achievedSales from deliveries
+        const updatedTargets = await Promise.all(
+          targetsData.map(async (target) => {
+            try {
+              // Get deliveries for this agency
+              const deliveries = await deliveryAPI.getByAgencyId(target.agencyId);
+              
+              // Count delivered items in this month/year
+              const achievedCount = (deliveries || []).filter(d => {
+                const deliveryDate = dayjs(d.deliveryDate);
+                return d.deliveryStatus === 'Delivered' &&
+                       deliveryDate.year() === target.targetYear &&
+                       deliveryDate.month() + 1 === target.targetMonth;
+              }).length;
+
+              // Auto-update if achievedSales changed
+              if (achievedCount !== target.achievedSales) {
+                const updateData = {
+                  targetYear: target.targetYear,
+                  targetMonth: target.targetMonth,
+                  targetSales: target.targetSales,
+                  achievedSales: achievedCount
+                };
+
+                await axios.put(
+                  `${AGENCY_API}/AgencyTarget/Agency/${target.agencyId}/target?targetId=${target.id}`,
+                  updateData,
+                  {
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    }
+                  }
+                );
+
+                return { ...target, achievedSales: achievedCount };
+              }
+
+              return target;
+            } catch (error) {
+              console.error(`Error updating target for agency ${target.agencyId}:`, error);
+              return target;
+            }
+          })
+        );
+
+        setTargetList(updatedTargets);
+      } catch (error) {
+        console.error('Error fetching targets:', error);
+        message.error('Không thể tải dữ liệu chỉ tiêu');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTargets();
+  }, [currentUser, isDealerManager, getAgencyId]);
+
   const targetData = useMemo(() => {
     return targetList.map(target => {
-      const agency = agencies.find(a => a.id === target.agency_id);
-      const achievementRate = target.target_sales > 0 
-        ? Math.round((target.achieved_sales / target.target_sales) * 100) 
+      const agency = agencies.find(a => a.id === target.agencyId);
+      const achievementRate = target.targetSales > 0 
+        ? Math.round((target.achievedSales / target.targetSales) * 100) 
         : 0;
       
       let status = 'in_progress';
@@ -63,14 +180,15 @@ const AgencyTargetPage = () => {
 
       return {
         id: target.id,
-        agency_id: target.agency_id,
-        agency_name: agency?.agency_name || 'Chưa xác định',
+        target_id: target.id,
+        agency_id: target.agencyId,
+        agency_name: agency?.agencyName || 'Chưa xác định',
         agency_location: agency?.location || '',
-        target_year: target.target_year,
-        target_month: target.target_month,
-        target_sales: target.target_sales,
-        achieved_sales: target.achieved_sales,
-        remaining_sales: target.target_sales - target.achieved_sales,
+        target_year: target.targetYear,
+        target_month: target.targetMonth,
+        target_sales: target.targetSales,
+        achieved_sales: target.achievedSales,
+        remaining_sales: target.targetSales - target.achievedSales,
         achievement_rate: achievementRate,
         status
       };
@@ -78,7 +196,7 @@ const AgencyTargetPage = () => {
       if (a.target_year !== b.target_year) return b.target_year - a.target_year;
       return b.target_month - a.target_month;
     });
-  }, [targetList]);
+  }, [targetList, agencies]);
 
   const totalTargets = targetData.length;
   const completedTargets = targetData.filter(t => t.status === 'completed').length;
@@ -88,6 +206,12 @@ const AgencyTargetPage = () => {
     : 0;
 
   const handleCreate = () => {
+    // Only EVStaff and Admin can create
+    if (!isEVStaffOrAdmin()) {
+      message.error('Bạn không có quyền tạo chỉ tiêu');
+      return;
+    }
+    
     setModalMode('create');
     setSelectedTarget(null);
     form.resetFields();
@@ -113,38 +237,73 @@ const AgencyTargetPage = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then(values => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+
       if (modalMode === 'create') {
-        const newTarget = {
-          id: targetList.length + 1,
-          agency_id: values.agency_id,
-          target_year: values.target_year,
-          target_month: values.target_month,
-          target_sales: values.target_sales,
-          achieved_sales: values.achieved_sales || 0
+        // Only EVStaff/Admin can create
+        if (!isEVStaffOrAdmin()) {
+          message.error('Bạn không có quyền tạo chỉ tiêu');
+          return;
+        }
+
+        const createData = {
+          targetYear: values.target_year,
+          targetMonth: values.target_month,
+          targetSales: values.target_sales,
+          achievedSales: 0 // Always start with 0
         };
-        setTargetList([newTarget, ...targetList]);
-        message.success('Tạo chỉ tiêu thành công');
-      } else if (modalMode === 'edit') {
-        const updatedList = targetList.map(target =>
-          target.id === selectedTarget.id
-            ? {
-                ...target,
-                agency_id: values.agency_id,
-                target_year: values.target_year,
-                target_month: values.target_month,
-                target_sales: values.target_sales,
-                achieved_sales: values.achieved_sales || 0
-              }
-            : target
+
+        await axios.post(
+          `${AGENCY_API}/AgencyTarget/Agency/${values.agency_id}/targets`,
+          createData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
         );
-        setTargetList(updatedList);
+
+        message.success('Tạo chỉ tiêu thành công');
+        
+        // Refresh data
+        window.location.reload();
+      } else if (modalMode === 'edit') {
+        const updateData = {
+          targetYear: values.target_year,
+          targetMonth: values.target_month,
+          targetSales: values.target_sales,
+          achievedSales: values.achieved_sales || 0
+        };
+
+        await axios.put(
+          `${AGENCY_API}/AgencyTarget/Agency/${selectedTarget.agency_id}/target?targetId=${selectedTarget.target_id}`,
+          updateData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
+        );
+
         message.success('Cập nhật chỉ tiêu thành công');
+        
+        // Refresh data
+        window.location.reload();
       }
+
       form.resetFields();
       setIsModalOpen(false);
-    }).catch(() => {});
+    } catch (error) {
+      console.error('Error submitting target:', error);
+      message.error('Không thể lưu chỉ tiêu');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const statusMeta = (status) => {
@@ -272,18 +431,21 @@ const AgencyTargetPage = () => {
   ];
 
   return (
-    <div className="agency-target-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <TrophyOutlined /> Quản lý chỉ tiêu doanh số
-          </Title>
-          <Text type="secondary">Theo dõi và quản lý chỉ tiêu doanh số của các đại lý</Text>
+    <Spin spinning={loading}>
+      <div className="agency-target-page">
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <TrophyOutlined /> Quản lý chỉ tiêu doanh số
+            </Title>
+            <Text type="secondary">Theo dõi và quản lý chỉ tiêu doanh số của các đại lý</Text>
+          </div>
+          {isEVStaffOrAdmin() && (
+            <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+              Tạo chỉ tiêu mới
+            </Button>
+          )}
         </div>
-        <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-          Tạo chỉ tiêu mới
-        </Button>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
@@ -400,19 +562,21 @@ const AgencyTargetPage = () => {
           </div>
         ) : (
           <Form form={form} layout="vertical">
-            <Form.Item
-              name="agency_id"
-              label="Đại lý"
-              rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
-            >
-              <Select placeholder="Chọn đại lý" suffixIcon={<ShopOutlined />}>
-                {agencies.map(agency => (
-                  <Select.Option key={agency.id} value={agency.id}>
-                    {agency.agency_name} - {agency.location}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
+            {isEVStaffOrAdmin() && (
+              <Form.Item
+                name="agency_id"
+                label="Đại lý"
+                rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
+              >
+                <Select placeholder="Chọn đại lý" suffixIcon={<ShopOutlined />}>
+                  {agencies.map(agency => (
+                    <Select.Option key={agency.id} value={agency.id}>
+                      {agency.agency_name} - {agency.location}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
 
             <Row gutter={16}>
               <Col span={12}>
@@ -472,6 +636,7 @@ const AgencyTargetPage = () => {
         )}
       </Modal>
     </div>
+    </Spin>
   );
 };
 

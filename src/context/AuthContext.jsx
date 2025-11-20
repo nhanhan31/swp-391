@@ -92,6 +92,11 @@ export const AuthProvider = ({ children }) => {
     return currentUser?.role === 'EVStaff';
   };
 
+  // Kiểm tra có phải EV Staff không
+  const isEVStaff = () => {
+    return currentUser?.role === 'EVStaff';
+  };
+
   // Kiểm tra có phải Dealer Manager không
   const isDealerManager = () => {
     return currentUser?.role === 'AgencyManager';
@@ -123,6 +128,7 @@ export const AuthProvider = ({ children }) => {
     hasPermission,
     isAdmin,
     isEVMStaff,
+    isEVStaff,
     isDealerManager,
     isAgencyManager,
     isDealerStaff,

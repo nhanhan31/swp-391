@@ -150,25 +150,21 @@ const VehicleInventoryPage = () => {
 
   // Calculate inventory by vehicle
   const inventoryByVehicle = vehicleList.map((vehicle, index) => {
-    // Count total instances for this vehicle from VehicleInstance API
-    const totalInstances = vehicleInstanceList.filter(inst => inst.vehicleId === vehicle.id).length;
+    // Count total instances in EVInventory (kho hãng)
+    const evInstances = evInventoryList.filter(evItem => 
+      evItem.vehicleInstance?.vehicleId === vehicle.id
+    );
+    const totalInstances = evInstances.length;
     
-    // Count allocated instances from both EVInventory and AgencyInventory
-    // EVInventory contains allocation records with vehicleInstance inside
-    const evAllocated = evInventoryList.filter(item => 
-      item.vehicleInstance?.vehicleId === vehicle.id
-    ).length;
-    
-    // AgencyInventory contains direct allocations
-    const agencyAllocated = agencyInventoryData.filter(item => {
-      const itemVehicleId = item.vehicleDetails?.vehicleId || item.vehicleId;
+    // Count allocated instances = those in AgencyInventory (đã phân bổ)
+    const allocatedInstances = agencyInventoryData.filter(item => {
+      // Check if this instance is in agency inventory
       const instanceVehicleId = vehicleInstanceList.find(inst => inst.id === item.vehicleInstanceId)?.vehicleId;
-      return itemVehicleId === vehicle.id || instanceVehicleId === vehicle.id;
-    }).length;
+      return instanceVehicleId === vehicle.id;
+    });
+    const totalAllocated = allocatedInstances.length;
     
-    // Total allocated = EVInventory + AgencyInventory (they might overlap, so use the max)
-    const totalAllocated = Math.max(evAllocated, agencyAllocated);
-    
+    // Available = In EVInventory but NOT in AgencyInventory (chưa phân bổ)
     const available = totalInstances - totalAllocated;
     const allocationRatio = totalInstances > 0 ? Math.round((totalAllocated / totalInstances) * 100) : 0;
     const status = available <= 5 ? 'low' : available <= 15 ? 'warning' : 'good';
@@ -185,7 +181,7 @@ const VehicleInventoryPage = () => {
       allocation_ratio: allocationRatio,
       status
     };
-  }).filter(item => item.total_quantity > 0); // Only show vehicles that have instances
+  }).filter(item => item.total_quantity > 0); // Only show vehicles that have instances in EV Inventory
 
   // Calculate inventory by agency
   const inventoryByAgency = agencyList.map(agency => {
@@ -218,11 +214,10 @@ const VehicleInventoryPage = () => {
     };
   }).sort((a, b) => b.total_quantity - a.total_quantity);
 
-  // Calculate totals from vehicle instances
-  const totalInventory = vehicleInstanceList.length;
-  // Use EVInventory or AgencyInventory, whichever is larger (they should be the same ideally)
-  const totalAllocated = Math.max(evInventoryList.length, agencyInventoryData.length);
-  const totalAvailable = totalInventory - totalAllocated;
+  // Calculate totals
+  const totalInventory = evInventoryList.length; // Tổng xe trong kho hãng (EVInventory)
+  const totalAllocated = agencyInventoryData.length; // Đã phân bổ = có trong kho agency
+  const totalAvailable = totalInventory - totalAllocated; // Chưa phân bổ = trong EVInventory nhưng chưa có trong AgencyInventory
   const lowStockVehicles = inventoryByVehicle.filter(item => item.status === 'low').length;
 
   const handleViewDetails = (record) => {
@@ -267,16 +262,16 @@ const VehicleInventoryPage = () => {
       dataIndex: 'allocated_quantity',
       key: 'allocated_quantity',
       width: 140,
-      render: (quantity) => <Tag color="geekblue">{quantity} xe</Tag>
+      render: (quantity) => <Tag color="geekblue">{quantity} xe (trong kho đại lý)</Tag>
     },
     {
-      title: 'Đang trống',
+      title: 'Chưa phân bổ',
       dataIndex: 'available_quantity',
       key: 'available_quantity',
       width: 140,
       render: (quantity, record) => (
         <Tag color={record.status === 'low' ? 'red' : record.status === 'warning' ? 'orange' : 'green'}>
-          {quantity} xe
+          {quantity} xe (chỉ trong kho hãng)
         </Tag>
       )
     },
@@ -389,7 +384,7 @@ const VehicleInventoryPage = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Tổng số xe kho trung tâm"
+              title="Tổng xe kho hãng (EVInventory)"
               value={totalInventory}
               prefix={<DatabaseOutlined />}
               valueStyle={{ color: '#1890ff' }}
@@ -399,7 +394,7 @@ const VehicleInventoryPage = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Đã phân bổ cho đại lý"
+              title="Đã phân bổ (trong kho đại lý)"
               value={totalAllocated}
               prefix={<ApartmentOutlined />}
               valueStyle={{ color: '#52c41a' }}
@@ -409,7 +404,7 @@ const VehicleInventoryPage = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Xe còn lại"
+              title="Chưa phân bổ (chỉ kho hãng)"
               value={totalAvailable}
               prefix={<CarOutlined />}
               valueStyle={{ color: '#faad14' }}
