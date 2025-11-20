@@ -57,7 +57,7 @@ const MainLayout = () => {
     // Menu cho Admin
     if (isAdmin()) {
       return [
-        ...commonItems,
+        // ...commonItems,
         {
           key: 'vehicles-management',
           icon: <CarOutlined />,
@@ -65,8 +65,8 @@ const MainLayout = () => {
           children: [
             { key: '/vehicles', label: 'Danh mục xe' },
             { key: '/vehicles/inventory', label: 'Tồn kho tổng' },
-            { key: '/vehicles/prices', label: 'Quản lý giá' },
-            { key: '/vehicles/promotions', label: 'Khuyến mãi' }
+            // { key: '/vehicles/prices', label: 'Quản lý giá' },
+            // { key: '/vehicles/promotions', label: 'Khuyến mãi' }
           ]
         },
         {
@@ -82,15 +82,15 @@ const MainLayout = () => {
             { key: '/agencies/accounts', label: 'Tài khoản đại lý' }
           ]
         },
-        {
-          key: 'users-management',
-          icon: <TeamOutlined />,
-          label: 'Quản lý người dùng',
-          children: [
-            { key: '/users', label: 'Danh sách người dùng' },
-            { key: '/roles', label: 'Phân quyền' }
-          ]
-        },
+        // {
+        //   key: 'users-management',
+        //   icon: <TeamOutlined />,
+        //   label: 'Quản lý người dùng',
+        //   children: [
+        //     { key: '/users', label: 'Danh sách người dùng' },
+        //     { key: '/roles', label: 'Phân quyền' }
+        //   ]
+        // },
         {
           key: 'reports-admin',
           icon: <BarChartOutlined />,
@@ -108,7 +108,7 @@ const MainLayout = () => {
     // Menu cho EVM Staff
     if (isEVMStaff()) {
       return [
-        ...commonItems,
+        // ...commonItems,
         {
           key: 'vehicles-management',
           icon: <CarOutlined />,
@@ -168,6 +168,7 @@ const MainLayout = () => {
           children: [
             { key: '/agencies/contracts', label: 'Hợp đồng đại lý' },
             { key: '/agencies/orders', label: 'Đơn nhập xe' },
+            { key: '/agencies/payments', label: 'Thanh toán đơn hàng' },
             { key: '/agencies/targets', label: 'Chỉ tiêu doanh số' }
           ]
         },

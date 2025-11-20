@@ -32,7 +32,10 @@ import {
   agencyAPI, 
   allocationAPI, 
   agencyInventoryAPI,
-  evInventoryAPI
+  evInventoryAPI,
+  paymentAPI,
+  installmentAPI,
+  vehiclePriceAPI
 } from '../services/quotationService';
 import { vehicleAPI, vehicleInstanceAPI } from '../services/vehicleService';
 
@@ -218,13 +221,80 @@ const VehicleAllocationPage = () => {
       
       setLoading(true);
 
-      // Process each vehicle instance - TẠO ALLOCATION VÀ NHẬP KHO
+      // BƯỚC 1: Lấy giá xe từ VehiclePrice API
+      console.log('=== BƯỚC 1: Lấy giá xe ===');
+      const vehicle = vehicleList.find(v => v.id === selectedOrder.vehicleId);
+      console.log('Vehicle found:', vehicle);
+      
+      // Fetch tất cả giá xe
+      const allPrices = await vehiclePriceAPI.getAll();
+      console.log('All vehicle prices:', allPrices);
+      
+      // Tìm giá cho vehicleId này (lấy giá MSRP)
+      const vehiclePrice = allPrices.find(p => 
+        p.vehicleId === selectedOrder.vehicleId && p.priceType === 'MSRP'
+      );
+      
+      console.log('Vehicle price found:', vehiclePrice);
+      
+      if (!vehiclePrice || !vehiclePrice.priceAmount) {
+        message.error('Không tìm thấy giá cho xe này. Vui lòng liên hệ admin để cấu hình giá!');
+        setLoading(false);
+        return;
+      }
+      
+      const totalAmount = vehiclePrice.priceAmount * selectedOrder.quantity;
+      const dueDate = dayjs().add(3, 'month');
+      
+      console.log('Price per vehicle:', vehiclePrice.priceAmount);
+      console.log('Quantity:', selectedOrder.quantity);
+      console.log('Total amount:', totalAmount);
+      console.log('Agency Contract ID:', selectedOrder.agencyContractId);
+
+      // BƯỚC 2: Tạo installment plan
+      
+      console.log('=== BƯỚC 2: Tạo installment plan ===');
+      
+      // Tạo Installment Plan (dùng agencyContractId)
+      const installmentPlanPayload = {
+        agencyContractId: selectedOrder.agencyContractId,
+        principalAmount: totalAmount,
+        depositAmount: 0,
+        interestRate: 0,
+        interestMethod: 'Fixed',
+        ruleJson: '',
+        note: `Trả góp 1 kỳ (3 tháng) cho đơn hàng #${selectedOrder.id}. Tổng tiền: ${totalAmount.toLocaleString('vi-VN')} VND`
+      };
+      
+      console.log('Creating installment plan:', installmentPlanPayload);
+      const installmentPlan = await installmentAPI.createPlan(installmentPlanPayload);
+      console.log('✓ Đã tạo installment plan:', installmentPlan);
+      
+      // Tạo 1 installment item
+      const installmentItemPayload = {
+        InstallmentPlanId: installmentPlan.id,
+        InstallmentNo: 1,
+        DueDate: dueDate.format('YYYY-MM-DDTHH:mm:ss.SSS[Z]'),
+        Percentage: 100,
+        AmountDue: totalAmount,
+        PrincipalComponent: totalAmount,
+        InterestComponent: 0,
+        FeeComponent: 0,
+        Status: 'Pending',
+        Notes: 'Kỳ 1/1 - Thanh toán toàn bộ sau 3 tháng'
+      };
+      
+      console.log('Creating installment item:', installmentItemPayload);
+      await installmentAPI.createItem(installmentItemPayload);
+      console.log('✓ Đã tạo installment item');
+
+      // BƯỚC 3: Tạo allocations (chỉ khi installment plan đã thành công)
+      console.log('\n=== BƯỚC 3: Tạo allocations ===');
       for (let i = 0; i < selectedInstances.length; i++) {
         const instanceId = selectedInstances[i];
         
         console.log(`\n--- Đang xử lý xe ${i + 1}/${selectedInstances.length} ---`);
         
-        // Step 1: Tạo allocation với agencyOrderId
         const allocationData = {
           agencyContractId: values.agencyContractId,
           vehicleInstanceId: instanceId,
@@ -234,32 +304,27 @@ const VehicleAllocationPage = () => {
         console.log('Tạo phân bổ:', allocationData);
         await allocationAPI.create(allocationData);
         console.log('✓ Đã tạo phân bổ');
-
-        // Step 2: Nhập kho đại lý ngay sau khi phân bổ
-        const order = orderList.find(o => o.id === selectedOrder.id);
-        if (order && order.agencyId) {
-          const inventoryData = {
-            vehicleInstanceId: instanceId
-          };
-
-          console.log('Nhập kho đại lý:', { agencyId: order.agencyId, data: inventoryData });
-          await agencyInventoryAPI.addToInventory(order.agencyId, inventoryData);
-          console.log('✓ Đã nhập kho');
-        }
       }
 
-      console.log('\n=== Hoàn thành phân bổ và nhập kho ===');
+      // BƯỚC 4: Đổi status AgencyOrder thành Processing
+      console.log('\n=== BƯỚC 4: Đổi status order thành Processing ===');
+      await agencyOrderAPI.update(selectedOrder.id, {
+        status: 'Processing'
+      });
+      console.log('✓ Đã đổi status order');
+
+      console.log('\n=== Hoàn thành phân bổ ===');
       message.success({
-        content: `Đã phân bổ và nhập kho thành công ${selectedInstances.length} xe. Đơn hàng chuyển sang trạng thái Processing.`,
+        content: `Đã tạo kế hoạch trả góp và phân bổ thành công ${selectedInstances.length} xe. Đơn hàng chuyển sang trạng thái Processing.`,
         duration: 5
       });
 
-      // Update order status to 'Processing'
-      await agencyOrderAPI.update(selectedOrder.id, {
-        vehicleId: selectedOrder.vehicleId,
-        quantity: selectedOrder.quantity,
-        status: 'Completed'
-      });
+      // // Update order status to 'Processing'
+      // await agencyOrderAPI.update(selectedOrder.id, {
+      //   vehicleId: selectedOrder.vehicleId,
+      //   quantity: selectedOrder.quantity,
+      //   status: 'Completed'
+      // });
 
       // Reload data
       await fetchData();

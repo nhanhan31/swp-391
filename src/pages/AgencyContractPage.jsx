@@ -17,7 +17,11 @@ import {
   Spin,
   Space,
   Select,
-  InputNumber
+  InputNumber,
+  Upload,
+  Alert,
+  Dropdown,
+  Image
 } from 'antd';
 import {
   FileTextOutlined,
@@ -28,13 +32,17 @@ import {
   PlusOutlined,
   EyeOutlined,
   FilePdfOutlined,
-  FileImageOutlined
+  FileImageOutlined,
+  EditOutlined,
+  MoreOutlined,
+  UploadOutlined
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import dayjs from 'dayjs';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { agencyContractAPI, agencyAPI } from '../services/quotationService';
 
@@ -42,7 +50,7 @@ const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 const AgencyContractPage = () => {
-  const { currentUser, isAdmin, isEVMStaff } = useAuth();
+  const { currentUser, isAdmin, isEVMStaff, isEVStaff, isDealerManager, isAgencyManager } = useAuth();
   const [contractList, setContractList] = useState([]);
   const [agencyList, setAgencyList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,6 +61,8 @@ const AgencyContractPage = () => {
   const [form] = Form.useForm();
   const contractPreviewRef = useRef(null);
   const [previewMarkdown, setPreviewMarkdown] = useState('');
+  const [contractImageFile, setContractImageFile] = useState(null);
+  const [isSignModalOpen, setIsSignModalOpen] = useState(false);
 
   // Default markdown template
   const defaultContractTemplate = `# Cộng hòa xã hội chủ nghĩa Việt Nam
@@ -163,6 +173,8 @@ Theo quy định của pháp luật Việt Nam
           console.log('Calling API: GET /AgencyContract/' + agencyId);
           const data = await agencyContractAPI.getByAgencyId(agencyId);
           console.log('Agency Contracts Response:', data);
+          console.log('First contract status:', data?.[0]?.status);
+          console.log('First contract full data:', data?.[0]);
           
           // Add agency info
           const contractsWithAgency = (data || []).map(contract => ({
@@ -187,12 +199,11 @@ Theo quy định của pháp luật Việt Nam
   // Calculate statistics
   const stats = {
     total: contractList.length,
-    active: contractList.filter(c => c.status === 'active').length,
-    expiringSoon: contractList.filter(c => {
-      const daysLeft = dayjs(c.contractEndDate).diff(dayjs(), 'day');
-      return daysLeft > 0 && daysLeft <= 30;
-    }).length,
-    expired: contractList.filter(c => c.status === 'expired' || dayjs(c.contractEndDate).isBefore(dayjs())).length
+    pending: contractList.filter(c => c.status === 'Pending').length,
+    signed: contractList.filter(c => c.status === 'Signed').length,
+    active: contractList.filter(c => c.status === 'Active').length,
+    inactive: contractList.filter(c => c.status === 'Inactive').length,
+    expired: contractList.filter(c => c.status === 'Expired' || (c.status === 'Active' && dayjs(c.contractEndDate).isBefore(dayjs()))).length
   };
 
   // Generate contract markdown from form values
@@ -337,8 +348,13 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
     }
   };
 
-  // Handle create
+  // Handle create (Only EVStaff)
   const handleCreate = () => {
+    if (!isEVStaff()) {
+      message.error('Chỉ EVStaff mới có quyền tạo hợp đồng');
+      return;
+    }
+    
     setModalMode('create');
     setSelectedContract(null);
     setSelectedAgency(null);
@@ -371,6 +387,156 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
     setIsModalOpen(true);
   };
 
+  // Handle sign contract (AgencyManager)
+  const handleSignContract = (record) => {
+    setSelectedContract(record);
+    setContractImageFile(null);
+    setIsSignModalOpen(true);
+  };
+
+  // Submit signature
+  const handleSubmitSignature = async () => {
+    if (!contractImageFile) {
+      message.error('Vui lòng tải lên ảnh hợp đồng đã ký');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const formData = new FormData();
+      formData.append('ContractImageUrl', contractImageFile);
+      formData.append('Status', 'Signed');
+
+      await axios.put(
+        `https://agency.agencymanagement.online/api/AgencyContract/${selectedContract.id}`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        }
+      );
+
+      message.success('Ký hợp đồng thành công!');
+      setIsSignModalOpen(false);
+      
+      // Refresh contracts
+      const data = await agencyContractAPI.getByAgencyId(currentUser?.agency?.id);
+      const contractsWithAgency = (data || []).map(contract => ({
+        ...contract,
+        agencyInfo: currentUser.agency
+      }));
+      setContractList(contractsWithAgency);
+    } catch (error) {
+      console.error('Error signing contract:', error);
+      message.error('Lỗi khi ký hợp đồng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle activate contract (EVStaff)
+  const handleActivateContract = async (record) => {
+    Modal.confirm({
+      title: 'Kích hoạt hợp đồng',
+      content: `Bạn có chắc muốn kích hoạt hợp đồng ${record.contractNumber}?`,
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await axios.put(
+            `https://agency.agencymanagement.online/api/AgencyContract/${record.id}`,
+            {
+              contractNumber: record.contractNumber,
+              contractDate: record.contractDate,
+              contractEndDate: record.contractEndDate,
+              terms: record.terms,
+              status: 'Active'
+            },
+            {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+                'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+              }
+            }
+          );
+
+          message.success('Kích hoạt hợp đồng thành công!');
+          
+          // Refresh
+          const agencies = await agencyAPI.getAll();
+          const allContracts = [];
+          for (const agency of agencies || []) {
+            const data = await agencyContractAPI.getByAgencyId(agency.id);
+            const contractsWithAgency = (data || []).map(c => ({
+              ...c,
+              agencyInfo: agency
+            }));
+            allContracts.push(...contractsWithAgency);
+          }
+          setContractList(allContracts);
+        } catch (error) {
+          console.error('Error activating contract:', error);
+          message.error('Lỗi khi kích hoạt hợp đồng');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
+  // Handle deactivate contract (EVStaff)
+  const handleDeactivateContract = async (record) => {
+    Modal.confirm({
+      title: 'Hủy kích hoạt hợp đồng',
+      content: `Bạn có chắc muốn hủy kích hoạt hợp đồng ${record.contractNumber}?`,
+      icon: <WarningOutlined style={{ color: 'red' }} />,
+      okText: 'Hủy kích hoạt',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await axios.put(
+            `https://agency.agencymanagement.online/api/AgencyContract/${record.id}`,
+            {
+              contractNumber: record.contractNumber,
+              contractDate: record.contractDate,
+              contractEndDate: record.contractEndDate,
+              terms: record.terms,
+              status: 'Inactive'
+            },
+            {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+                'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+              }
+            }
+          );
+
+          message.success('Đã hủy kích hoạt hợp đồng!');
+          
+          // Refresh
+          const agencies = await agencyAPI.getAll();
+          const allContracts = [];
+          for (const agency of agencies || []) {
+            const data = await agencyContractAPI.getByAgencyId(agency.id);
+            const contractsWithAgency = (data || []).map(c => ({
+              ...c,
+              agencyInfo: agency
+            }));
+            allContracts.push(...contractsWithAgency);
+          }
+          setContractList(allContracts);
+        } catch (error) {
+          console.error('Error deactivating contract:', error);
+          message.error('Lỗi khi hủy kích hoạt hợp đồng');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
   // Handle submit
   const handleSubmit = async () => {
     try {
@@ -381,13 +547,13 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
         contractNumber: values.contractNumber,
         contractDate: values.contractDate.format('YYYY-MM-DD'),
         contractEndDate: values.contractEndDate.format('YYYY-MM-DD'),
-        terms: previewMarkdown, // Use generated markdown
-        status: values.status || 'active'
+        terms: previewMarkdown,
+        status: 'Pending' // Always create with Pending status
       };
 
       if (modalMode === 'create') {
         await agencyContractAPI.create(contractData);
-        message.success('Tạo hợp đồng thành công!');
+        message.success('Tạo hợp đồng thành công! Đang chờ đại lý ký.');
       } else if (modalMode === 'edit') {
         await agencyContractAPI.update(selectedContract.id, contractData);
         message.success('Cập nhật hợp đồng thành công!');
@@ -540,6 +706,13 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
       )
     },
     {
+      title: 'hinh anh',
+      dataIndex: 'contractImageUrl',
+      key: 'contractImageUrl',
+      width: 120,
+      render: (contractImageUrl) => <Image src={contractImageUrl} alt="Contract" style={{ maxWidth: '100%', maxHeight: '80px' }} />
+    },
+    {
       title: 'Ngày bắt đầu',
       dataIndex: 'contractDate',
       key: 'contractDate',
@@ -572,31 +745,75 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
+      width: 130,
       render: (status) => {
         const statusMap = {
-          active: { text: 'Còn hiệu lực', color: 'green', icon: <CheckCircleOutlined /> },
-          expired: { text: 'Đã hết hạn', color: 'red', icon: <CloseCircleOutlined /> },
-          terminated: { text: 'Đã chấm dứt', color: 'gray', icon: <CloseCircleOutlined /> }
+          Pending: { text: 'Chờ ký', color: 'orange', icon: <ClockCircleOutlined /> },
+          Signed: { text: 'Đã ký', color: 'blue', icon: <EditOutlined /> },
+          Active: { text: 'Đang hoạt động', color: 'green', icon: <CheckCircleOutlined /> },
+          Inactive: { text: 'Đã hủy', color: 'gray', icon: <CloseCircleOutlined /> },
+          Expired: { text: 'Hết hạn', color: 'red', icon: <CloseCircleOutlined /> }
         };
-        const s = statusMap[status] || statusMap.active;
+        const s = statusMap[status] || statusMap.Pending;
         return <Tag color={s.color} icon={s.icon}>{s.text}</Tag>;
       }
     },
     {
       title: 'Thao tác',
       key: 'actions',
-      width: 80,
+      width: 200,
       align: 'center',
-      render: (_, record) => (
-        <Button
-          type="link"
-          icon={<EyeOutlined />}
-          onClick={() => handleView(record)}
-        >
-          Xem
-        </Button>
-      )
+      render: (_, record) => {
+        console.log('Current user role:', currentUser?.role);
+        console.log('Record status:', record.status);
+        console.log('isDealerManager():', isDealerManager());
+        console.log('isAgencyManager():', isAgencyManager());
+        
+        const items = [
+          {
+            key: 'view',
+            label: 'Xem chi tiết',
+            icon: <EyeOutlined />,
+            onClick: () => handleView(record)
+          }
+        ];
+
+        // AgencyManager can sign Pending contracts
+        if ((isDealerManager() || isAgencyManager()) && record.status === 'Pending') {
+          items.push({
+            key: 'sign',
+            label: 'Ký hợp đồng',
+            icon: <EditOutlined />,
+            onClick: () => handleSignContract(record)
+          });
+        }
+
+        // EVStaff can activate Signed contracts
+        if (isEVStaff() && record.status === 'Signed') {
+          items.push({
+            key: 'activate',
+            label: 'Kích hoạt',
+            icon: <CheckCircleOutlined />,
+            onClick: () => handleActivateContract(record)
+          });
+        }
+
+        // EVStaff can deactivate Active contracts
+        if (isEVStaff() && record.status === 'Active') {
+          items.push({
+            key: 'deactivate',
+            label: 'Hủy kích hoạt',
+            icon: <CloseCircleOutlined />,
+            onClick: () => handleDeactivateContract(record)
+          });
+        }
+
+        return (
+          <Dropdown menu={{ items }} trigger={['click']}>
+            <Button icon={<MoreOutlined />}>Thao tác</Button>
+          </Dropdown>
+        );
+      }
     }
   ];
 
@@ -617,9 +834,11 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
           </Title>
           <Text type="secondary">Quản lý các hợp đồng hợp tác với VinFast</Text>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-          Tạo hợp đồng mới
-        </Button>
+        {isEVStaff() && (
+          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+            Tạo hợp đồng mới
+          </Button>
+        )}
       </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
@@ -636,19 +855,9 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Còn hiệu lực"
-              value={stats.active}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Sắp hết hạn"
-              value={stats.expiringSoon}
-              prefix={<WarningOutlined />}
+              title="Chờ ký"
+              value={stats.pending}
+              prefix={<ClockCircleOutlined />}
               valueStyle={{ color: '#fa8c16' }}
             />
           </Card>
@@ -656,7 +865,40 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Đã hết hạn"
+              title="Đã ký"
+              value={stats.signed}
+              prefix={<EditOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="Đang hoạt động"
+              value={stats.active}
+              prefix={<CheckCircleOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={16} style={{ marginBottom: '24px' }}>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="Đã hủy"
+              value={stats.inactive}
+              prefix={<CloseCircleOutlined />}
+              valueStyle={{ color: '#8c8c8c' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="Hết hạn"
               value={stats.expired}
               prefix={<CloseCircleOutlined />}
               valueStyle={{ color: '#ff4d4f' }}
@@ -761,7 +1003,7 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
               <Form form={form} layout="vertical" onValuesChange={handleFormChange}>
                 <Title level={4}>Thông tin hợp đồng</Title>
                 
-                {(isAdmin() || isEVMStaff()) && (
+                {isEVStaff() && (
                   <Form.Item
                     name="agencyId"
                     label="Chọn đại lý"
@@ -915,6 +1157,71 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
               </Card>
             </Col>
           </Row>
+        )}
+      </Modal>
+
+      {/* Modal ký hợp đồng */}
+      <Modal
+        title="Ký hợp đồng"
+        open={isSignModalOpen}
+        onCancel={() => setIsSignModalOpen(false)}
+        onOk={handleSubmitSignature}
+        okText="Xác nhận ký"
+        cancelText="Hủy"
+        width={600}
+      >
+        <div style={{ marginBottom: '16px' }}>
+          <Text strong>Số hợp đồng: </Text>
+          <Text style={{ color: '#1890ff', fontSize: '16px' }}>
+            {selectedContract?.contractNumber}
+          </Text>
+        </div>
+
+        <Alert
+          message="Lưu ý"
+          description="Vui lòng tải lên ảnh hợp đồng đã ký (chữ ký + đóng dấu). Hỗ trợ định dạng: JPG, PNG. Kích thước tối đa: 5MB."
+          type="info"
+          showIcon
+          style={{ marginBottom: '16px' }}
+        />
+
+        <Form.Item
+          label="Ảnh hợp đồng đã ký"
+          required
+        >
+          <Upload
+            beforeUpload={(file) => {
+              const isImage = file.type.startsWith('image/');
+              if (!isImage) {
+                message.error('Chỉ được tải lên file hình ảnh!');
+                return false;
+              }
+              const isLt5M = file.size / 1024 / 1024 < 5;
+              if (!isLt5M) {
+                message.error('Hình ảnh phải nhỏ hơn 5MB!');
+                return false;
+              }
+              setContractImageFile(file);
+              return false;
+            }}
+            maxCount={1}
+            listType="picture-card"
+            accept="image/*"
+          >
+            <div>
+              <UploadOutlined />
+              <div style={{ marginTop: 8 }}>Tải lên</div>
+            </div>
+          </Upload>
+        </Form.Item>
+
+        {contractImageFile && (
+          <Alert
+            message="Đã chọn file"
+            description={contractImageFile.name}
+            type="success"
+            showIcon
+          />
         )}
       </Modal>
     </div>

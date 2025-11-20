@@ -15,7 +15,8 @@ import {
   InputNumber,
   message,
   Descriptions,
-  Spin
+  Spin,
+  Checkbox
 } from 'antd';
 import {
   ShoppingCartOutlined,
@@ -28,7 +29,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuth } from '../context/AuthContext';
-import { agencyOrderAPI, agencyContractAPI } from '../services/quotationService';
+import { agencyOrderAPI, agencyContractAPI, agencyInventoryAPI, agencyOrderPaymentAPI, allocationAPI } from '../services/quotationService';
 import { vehicleAPI } from '../services/vehicleService';
 
 const { Title, Text } = Typography;
@@ -43,6 +44,9 @@ const AgencyOrderPage = () => {
   const [modalMode, setModalMode] = useState('create');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [form] = Form.useForm();
+  const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
+  const [orderVehicles, setOrderVehicles] = useState([]);
+  const [selectedVehicles, setSelectedVehicles] = useState([]);
 
   // Fetch data
   useEffect(() => {
@@ -83,6 +87,7 @@ const AgencyOrderPage = () => {
     total: orderList.length,
     pending: orderList.filter(o => o.status === 'Pending').length,
     confirmed: orderList.filter(o => o.status === 'Confirmed').length,
+    processing: orderList.filter(o => o.status === 'Processing').length,
     completed: orderList.filter(o => o.status === 'Completed').length
   };
 
@@ -99,6 +104,71 @@ const AgencyOrderPage = () => {
     setModalMode('view');
     setSelectedOrder(record);
     setIsModalOpen(true);
+  };
+
+  // Handle receive vehicles (nhập kho)
+  const handleReceiveVehicles = async (record) => {
+    try {
+      setLoading(true);
+      setSelectedOrder(record);
+      
+      // Fetch allocations for this order
+      const allocations = await allocationAPI.getByOrderId(record.id);
+      console.log('Order allocations:', allocations);
+      
+      setOrderVehicles(allocations || []);
+      setSelectedVehicles([]);
+      setIsReceiveModalOpen(true);
+    } catch (error) {
+      console.error('Error fetching order vehicles:', error);
+      message.error('Không thể tải danh sách xe');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle confirm receive vehicles
+  const handleConfirmReceive = async () => {
+    try {
+      if (selectedVehicles.length === 0) {
+        message.warning('Vui lòng chọn ít nhất 1 xe để nhập kho');
+        return;
+      }
+
+      setLoading(true);
+
+      // Import selected vehicles to agency inventory
+      for (const allocationId of selectedVehicles) {
+        const allocation = orderVehicles.find(a => a.id === allocationId);
+        if (allocation) {
+          await agencyInventoryAPI.addToInventory(currentUser.agency.id, {
+            vehicleInstanceId: allocation.vehicleInstanceId
+          });
+        }
+      }
+
+      // Check if all vehicles are received
+      if (selectedVehicles.length === orderVehicles.length) {
+        // Update order status to Completed
+        await agencyOrderAPI.update(selectedOrder.id, {
+          status: 'Completed'
+        });
+        message.success('Đã nhập kho toàn bộ xe và hoàn thành đơn hàng!');
+      } else {
+        message.success(`Đã nhập kho ${selectedVehicles.length} xe`);
+      }
+
+      setIsReceiveModalOpen(false);
+      
+      // Reload orders
+      const orders = await agencyOrderAPI.getByAgency(currentUser.agency.id);
+      setOrderList(orders || []);
+    } catch (error) {
+      console.error('Error receiving vehicles:', error);
+      message.error('Lỗi khi nhập kho');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle submit
@@ -182,6 +252,7 @@ const AgencyOrderPage = () => {
         const statusMap = {
           Pending: { text: 'Chờ xử lý', color: 'orange', icon: <ClockCircleOutlined /> },
           Confirmed: { text: 'Đã xác nhận', color: 'blue', icon: <CheckCircleOutlined /> },
+          Processing: { text: 'Chờ nhập kho', color: 'purple', icon: <CarOutlined /> },
           Completed: { text: 'Hoàn thành', color: 'green', icon: <CheckCircleOutlined /> },
           Cancelled: { text: 'Đã hủy', color: 'red', icon: <CloseCircleOutlined /> }
         };
@@ -199,16 +270,28 @@ const AgencyOrderPage = () => {
     {
       title: 'Thao tác',
       key: 'actions',
-      width: 80,
+      width: 150,
       align: 'center',
       render: (_, record) => (
-        <Button
-          type="link"
-          icon={<EyeOutlined />}
-          onClick={() => handleView(record)}
-        >
-          Xem
-        </Button>
+        <>
+          <Button
+            type="link"
+            icon={<EyeOutlined />}
+            onClick={() => handleView(record)}
+          >
+            Xem
+          </Button>
+          {record.status === 'Processing' && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<CarOutlined />}
+              onClick={() => handleReceiveVehicles(record)}
+            >
+              Nhập kho
+            </Button>
+          )}
+        </>
       )
     }
   ];
@@ -236,7 +319,7 @@ const AgencyOrderPage = () => {
       </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={24} sm={12} lg={6} xl={4}>
           <Card>
             <Statistic
               title="Tổng đơn"
@@ -246,7 +329,7 @@ const AgencyOrderPage = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={24} sm={12} lg={6} xl={4}>
           <Card>
             <Statistic
               title="Chờ xử lý"
@@ -256,7 +339,7 @@ const AgencyOrderPage = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={24} sm={12} lg={6} xl={4}>
           <Card>
             <Statistic
               title="Đã xác nhận"
@@ -266,7 +349,17 @@ const AgencyOrderPage = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
+        <Col xs={24} sm={12} lg={6} xl={4}>
+          <Card>
+            <Statistic
+              title="Chờ nhập kho"
+              value={stats.processing}
+              prefix={<CarOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6} xl={4}>
           <Card>
             <Statistic
               title="Hoàn thành"
@@ -348,7 +441,7 @@ const AgencyOrderPage = () => {
                   (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
                 options={contractList
-                  .filter(c => c.status === 'active')
+                  .filter(c => c.status === 'Active')
                   .map(contract => ({
                     label: `${contract.contractNumber} (${dayjs(contract.contractDate).format('DD/MM/YYYY')})`,
                     value: contract.id
@@ -387,6 +480,72 @@ const AgencyOrderPage = () => {
             </Form.Item>
           </Form>
         )}
+      </Modal>
+
+      {/* Modal nhập kho */}
+      <Modal
+        title={`Nhập kho - Đơn hàng #${selectedOrder?.id}`}
+        open={isReceiveModalOpen}
+        onCancel={() => setIsReceiveModalOpen(false)}
+        width={800}
+        footer={[
+          <Button key="cancel" onClick={() => setIsReceiveModalOpen(false)}>
+            Hủy
+          </Button>,
+          <Button 
+            key="submit" 
+            type="primary" 
+            onClick={handleConfirmReceive}
+            disabled={selectedVehicles.length === 0}
+          >
+            Nhập kho ({selectedVehicles.length} xe)
+          </Button>
+        ]}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text strong>Số lượng xe: </Text>
+          <Tag color="blue">{orderVehicles.length} xe</Tag>
+        </div>
+        
+        <Table
+          size="small"
+          rowSelection={{
+            selectedRowKeys: selectedVehicles,
+            onChange: (keys) => setSelectedVehicles(keys)
+          }}
+          columns={[
+            {
+              title: 'STT',
+              width: 60,
+              render: (_, __, index) => index + 1
+            },
+            {
+              title: 'VIN',
+              dataIndex: ['vehicleInstance', 'vin'],
+              key: 'vin',
+              render: (vin) => <Text code>{vin || 'N/A'}</Text>
+            },
+            {
+              title: 'Xe',
+              render: (_, record) => {
+                const vehicle = vehicleList.find(v => v.id === record.vehicleInstance?.vehicleId);
+                return vehicle?.variantName || 'N/A';
+              }
+            },
+            {
+              title: 'Màu',
+              dataIndex: ['vehicleInstance', 'color'],
+              key: 'color'
+            },
+            {
+              title: 'Trạng thái',
+              render: () => <Tag color="green">Sẵn sàng</Tag>
+            }
+          ]}
+          dataSource={orderVehicles}
+          rowKey="id"
+          pagination={false}
+        />
       </Modal>
     </div>
   );

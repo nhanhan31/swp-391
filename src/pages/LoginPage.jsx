@@ -34,7 +34,7 @@ const LoginPage = () => {
     { email: 'adminchat@gmail.com', password: 'Admin@123', role: 'Admin', description: 'Quản trị viên hệ thống' },
     { email: 'evstaff2@gmail.com', password: '123456', role: 'EVM Staff', description: 'Nhân viên hãng xe' },
     { email: 'agencymanager@gmail.com', password: '123456', role: 'Agency Manager', description: 'Quản lý đại lý' },
-    { email: 'agencystaff2@gmail.com', password: '123456', role: 'Agency Staff', description: 'Nhân viên bán hàng' }
+    { email: 'agencystaff4@gmail.com', password: '123456', role: 'Agency Staff', description: 'Nhân viên bán hàng' }
   ];
 
   const handleDemoLogin = (account) => {
