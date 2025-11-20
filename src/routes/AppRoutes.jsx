@@ -30,6 +30,7 @@ import VehicleDiscountPage from '../pages/VehicleDiscountPage';
 import AgencyManagementPage from '../pages/AgencyManagementPage';
 import AgencyContractPage from '../pages/AgencyContractPage';
 import AgencyOrderPage from '../pages/AgencyOrderPage';
+import AgencyPaymentPage from '../pages/AgencyPaymentPage';
 import AgencyOrderManagementPage from '../pages/AgencyOrderManagementPage';
 import AgencyTargetPage from '../pages/AgencyTargetPage';
 import AgencyDebtPage from '../pages/AgencyDebtPage';
@@ -137,6 +138,11 @@ const AppRoutes = () => {
                         <Route
                             path="agencies/orders"
                             element={<AgencyOrderPage />}
+                        />
+
+                        <Route
+                            path="agencies/payments"
+                            element={<AgencyPaymentPage />}
                         />
 
                         <Route

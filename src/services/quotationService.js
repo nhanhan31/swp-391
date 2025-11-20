@@ -162,6 +162,55 @@ export const userAPI = {
   }
 };
 
+// Agency Order Payment API
+export const agencyOrderPaymentAPI = {
+  // Get all payments
+  getAll: async () => {
+    const response = await axios.get(`${AGENCY_API}/AgencyOrderPayment/get-all`);
+    return response.data;
+  },
+
+  // Get payments by agency
+  getByAgency: async (agencyId) => {
+    const response = await axios.get(`${AGENCY_API}/AgencyOrderPayment/get-by-agency/${agencyId}`);
+    return response.data;
+  },
+
+  // Get payment by order ID
+  getByOrderId: async (orderId) => {
+    const response = await axios.get(`${AGENCY_API}/AgencyOrderPayment/get-by-order/${orderId}`);
+    return response.data;
+  },
+
+  // Create payment
+  create: async (data) => {
+    const response = await axios.post(`${AGENCY_API}/AgencyOrderPayment/create`, {
+      agencyOrderId: data.agencyOrderId,
+      totalAmount: data.totalAmount,
+      dueDate: data.dueDate,
+      paymentMethod: data.paymentMethod,
+      status: data.status
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    return response.data;
+  },
+
+  // Update payment status
+  updateStatus: async (id, status) => {
+    const response = await axios.put(`${AGENCY_API}/AgencyOrderPayment/update-status/${id}`, {
+      status: status
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    return response.data;
+  }
+};
+
 // Payment API
 export const paymentAPI = {
   // Get all payments
@@ -270,9 +319,12 @@ export const installmentAPI = {
 
   // Update installment plan status
   updatePlanStatus: async (id, data) => {
-    const response = await axios.put(`${ORDER_API}/InstallmentPlan/${id}`, data, {
+    const formData = new FormData();
+    formData.append('Status', data.status);
+    
+    const response = await axios.put(`${ORDER_API}/InstallmentPlan/${id}`, formData, {
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'multipart/form-data'
       }
     });
     return response.data;
@@ -611,7 +663,7 @@ export const agencyAPI = {
     formData.append('Address', data.address);
     formData.append('Phone', data.phone);
     if (data.avatar) {
-      formData.append('Avatar', data.avatar);
+      formData.append('Avartar', data.avatar);
     }
     if (data.location) {
       formData.append('Location', data.location);
@@ -714,6 +766,18 @@ export const agencyOrderAPI = {
     return response.data;
   },
 
+  // Get vehicles of an order (from allocations)
+  getOrderVehicles: async (orderId) => {
+    const response = await axios.get(`${AGENCY_API}/AgencyOrder/${orderId}`);
+    return response.data;
+  },
+
+  // Get order by ID
+  getById: async (orderId) => {
+    const response = await axios.get(`${AGENCY_API}/AgencyOrder/${orderId}`);
+    return response.data;
+  },
+
   // Create new order
   create: async (data) => {
     const response = await axios.post(`${AGENCY_API}/AgencyOrder/create`, {
@@ -748,12 +812,11 @@ export const agencyOrderAPI = {
 export const allocationAPI = {
   // Create allocation
   create: async (data) => {
-    const formData = new FormData();
-    formData.append('AgencyContractId', data.agencyContractId);
-    formData.append('VehicleInstanceId', data.vehicleInstanceId);
-    formData.append('AgencyOrderId', data.agencyOrderId);
-    
-    const response = await axios.post(`${ALLOCATION_API}/Allocation`, formData, {
+    const response = await axios.post(`${ALLOCATION_API}/Allocation`, {
+      agencyContractId: data.agencyContractId,
+      vehicleInstanceId: data.vehicleInstanceId,
+      agencyOrderId: data.agencyOrderId
+    }, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
@@ -770,6 +833,12 @@ export const allocationAPI = {
   // Get allocation by id
   getById: async (id) => {
     const response = await axios.get(`${ALLOCATION_API}/Allocation/${id}`);
+    return response.data;
+  },
+
+  // Get allocations by agency order ID
+  getByOrderId: async (orderId) => {
+    const response = await axios.get(`${ALLOCATION_API}/Allocation/agencyOrder/${orderId}`);
     return response.data;
   }
 };
