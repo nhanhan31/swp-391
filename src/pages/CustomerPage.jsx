@@ -239,12 +239,13 @@ const CustomerPage = () => {
     try {
       const values = await form.validateFields();
       
-      // Prepare customer payload
+      // Prepare customer payload matching API schema
       const customerPayload = {
         fullName: values.full_name,
         email: values.email,
         phone: values.phone,
-        address: values.address
+        address: values.address,
+        class: "string" // Default value as per API schema
       };
 
       // Store pending data and show verification modal

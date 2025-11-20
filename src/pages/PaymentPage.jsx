@@ -77,7 +77,11 @@ const PaymentPage = () => {
       // Fetch installment plans
       const installmentData = await installmentAPI.getAll();
       console.log('Installment plans:', installmentData);
-      setInstallmentPlans(installmentData || []);
+      
+      // Filter only plans with contractId (not agencyContractId)
+      const filteredPlans = installmentData.filter(plan => plan.contractId && !plan.agencyContractId);
+      console.log('Filtered plans (contractId only):', filteredPlans);
+      setInstallmentPlans(filteredPlans || []);
 
       // Fetch straight payments
       const paymentsData = await paymentAPI.getByAgencyId(agencyId);

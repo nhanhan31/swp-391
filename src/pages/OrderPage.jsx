@@ -973,7 +973,7 @@ ${paymentScheduleText}
           items.push({
             key: 'sign',
             icon: <FileProtectOutlined />,
-            label: 'Ký hợp đồng',
+            label: 'Tạo hợp đồng',
             onClick: () => handleSignContract(record.id)
           });
         }

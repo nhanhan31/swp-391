@@ -45,6 +45,7 @@ const AgencyPaymentPage = () => {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('view');
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedItemId, setSelectedItemId] = useState(null); // Store selected item ID
   const [form] = Form.useForm();
   const [paymentForm] = Form.useForm();
   const [paymentPreview, setPaymentPreview] = useState(null);
@@ -136,6 +137,7 @@ const AgencyPaymentPage = () => {
   const getItemStatusInfo = (status) => {
     const statusMap = {
       Pending: { text: 'Chưa thanh toán', color: 'orange', icon: <ClockCircleOutlined /> },
+      Partial: { text: 'Thanh toán một phần', color: 'blue', icon: <ClockCircleOutlined /> },
       Paid: { text: 'Đã thanh toán', color: 'green', icon: <CheckCircleOutlined /> },
       Overdue: { text: 'Quá hạn', color: 'red', icon: <CloseCircleOutlined /> }
     };
@@ -151,29 +153,49 @@ const AgencyPaymentPage = () => {
 
   // Handle pay installment
   const handlePayInstallment = (plan) => {
+    console.log('🎯 Opening payment modal for plan:', plan);
     setSelectedPlan(plan);
     setPaymentPreview(null);
 
-    // Set default values
-    const pendingItems = plan.items?.filter(item => item.status === 'Pending') || [];
+    // Auto-select the first (and only) pending item
+    const pendingItems = plan.items?.filter(item => 
+      item.status === 'Pending' || item.status === 'Partial'
+    ) || [];
+    console.log('📋 Pending items:', pendingItems);
+    
+    // Reset form first
+    paymentForm.resetFields();
+    
+    // Open modal
+    setIsPaymentModalOpen(true);
+    
+    // Then set values after a short delay to ensure form is ready
     if (pendingItems.length > 0) {
       const firstPendingItem = pendingItems[0];
       const totalRemaining = (plan.principalAmount || 0) - (plan.totalPaid || 0);
       
-      // Reset and set form values
-      paymentForm.resetFields();
+      // Store selected item ID in state
+      setSelectedItemId(firstPendingItem.id);
+      console.log('💾 Stored selected item ID in state:', firstPendingItem.id);
+      
       setTimeout(() => {
+        // Use amountRemaining if available (for Partial status), otherwise use amountDue
+        const amountToSet = firstPendingItem.amountRemaining || firstPendingItem.amountDue;
+        
         paymentForm.setFieldsValue({
-          installmentItemId: firstPendingItem.id,
-          amount: firstPendingItem.amountDue,
+          amount: amountToSet,
           paymentMethod: 'BankTransfer'
         });
+        
+        console.log('✅ Selected item ID:', firstPendingItem.id);
+        console.log('✅ Set form amount:', amountToSet);
+        
         // Calculate initial preview
-        calculatePaymentPreview(firstPendingItem.id, firstPendingItem.amountDue, plan.items, totalRemaining);
+        calculatePaymentPreview(firstPendingItem.id, amountToSet, plan.items, totalRemaining);
       }, 100);
+    } else {
+      console.warn('⚠️ No pending items found!');
     }
-
-    setIsPaymentModalOpen(true);
   };
 
   // Calculate payment preview
@@ -201,9 +223,8 @@ const AgencyPaymentPage = () => {
 
   // Handle amount change
   const handleAmountChange = (value) => {
-    const selectedItemId = paymentForm.getFieldValue('installmentItemId');
     if (selectedItemId && selectedPlan) {
-      const totalRemaining = selectedPlan.principalAmount - selectedPlan.totalPaid;
+      const totalRemaining = (selectedPlan.principalAmount || 0) - (selectedPlan.totalPaid || 0);
       calculatePaymentPreview(selectedItemId, value, selectedPlan.items, totalRemaining);
     }
   };
@@ -228,9 +249,10 @@ const AgencyPaymentPage = () => {
     try {
       const values = await paymentForm.validateFields();
       console.log('💰 Payment form values:', values);
+      console.log('🔑 Selected item ID from state:', selectedItemId);
 
-      if (!values.installmentItemId) {
-        message.warning('Vui lòng chọn kỳ thanh toán');
+      if (!selectedItemId) {
+        message.warning('Không tìm thấy kỳ thanh toán');
         return;
       }
 
@@ -251,12 +273,13 @@ const AgencyPaymentPage = () => {
 
       setLoading(true);
 
-      // Process installment payment
+      // Process installment payment using selectedItemId from state
       const paymentData = {
-        InstallmentItemId: values.installmentItemId,
-        Amount: values.amount,
-        PaymentMethod: values.paymentMethod || 'BankTransfer',
-        Note: values.note || ''
+        installmentPlanId: selectedPlan.id,
+        installmentItemId: selectedItemId,
+        amountPaid: values.amount,
+        paymentMethod: values.paymentMethod || 'BankTransfer',
+        note: values.note || ''
       };
       console.log('📤 Sending payment data:', paymentData);
       
@@ -308,10 +331,10 @@ const AgencyPaymentPage = () => {
     },
     {
       title: 'Mã HĐ',
-      dataIndex: 'contractNumber',
-      key: 'contractNumber',
+      dataIndex: 'agencyContractId',
+      key: 'agencyContractId',
       width: 100,
-      render: (contractNumber) => <Text code>{contractNumber}</Text>
+      render: (id) => <Text code>AC{id?.toString().padStart(4, '0')}</Text>
     },
     {
       title: 'Tổng giá trị',
@@ -387,6 +410,16 @@ const AgencyPaymentPage = () => {
       key: 'createAt',
       width: 120,
       render: (date) => dayjs(date).format('DD/MM/YYYY')
+    },
+    {
+      title: 'Hạn thanh toán',
+      key: 'dueDate',
+      width: 120,
+      render: (_, record) => {
+        const firstItem = record.items?.[0];
+        if (!firstItem?.dueDate) return '-';
+        return dayjs(firstItem.dueDate).format('DD/MM/YYYY');
+      }
     },
     {
       title: 'Thao tác',
@@ -541,7 +574,7 @@ const AgencyPaymentPage = () => {
             <Text strong code>IP{selectedPlan?.id.toString().padStart(4, '0')}</Text>
           </Descriptions.Item>
           <Descriptions.Item label="Mã hợp đồng" span={1}>
-            <Text code>{selectedPlan?.contractId}</Text>
+            <Text code>AC{selectedPlan?.agencyContractId?.toString().padStart(4, '0')}</Text>
           </Descriptions.Item>
           <Descriptions.Item label="Tổng giá trị" span={1}>
             <Text strong style={{ fontSize: '16px' }}>
@@ -607,6 +640,16 @@ const AgencyPaymentPage = () => {
                       {formatPrice(item.amountDue)}
                     </Text>
                   </Descriptions.Item>
+                  <Descriptions.Item label="Đã thanh toán" span={1}>
+                    <Text style={{ color: '#52c41a' }}>
+                      {formatPrice(selectedPlan?.totalPaid)}
+                    </Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Còn lại" span={1}>
+                    <Text strong style={{ color: '#fa8c16' }}>
+                      {formatPrice((selectedPlan?.principalAmount || 0) - (selectedPlan?.totalPaid || 0))}
+                    </Text>
+                  </Descriptions.Item>
                   <Descriptions.Item label="Tỷ lệ" span={1}>
                     {item.percentage}%
                   </Descriptions.Item>
@@ -626,9 +669,9 @@ const AgencyPaymentPage = () => {
                       {formatPrice(item.feeComponent)}
                     </Descriptions.Item>
                   )}
-                  {item.notes && (
+                  {item.note && (
                     <Descriptions.Item label="Ghi chú" span={2}>
-                      {item.notes}
+                      {item.note}
                     </Descriptions.Item>
                   )}
                 </Descriptions>
@@ -670,25 +713,6 @@ const AgencyPaymentPage = () => {
         </Descriptions>
 
         <Form form={paymentForm} layout="vertical">
-          <Form.Item
-            name="installmentItemId"
-            label="Chọn kỳ thanh toán"
-            rules={[{ required: true, message: 'Vui lòng chọn kỳ thanh toán' }]}
-          >
-            <Select
-              placeholder="Chọn kỳ thanh toán"
-              onChange={handleItemSelectionChange}
-            >
-              {selectedPlan?.items
-                ?.filter(item => item.status === 'Pending')
-                .map(item => (
-                  <Select.Option key={item.id} value={item.id}>
-                    Kỳ {item.installmentNo} - {formatPrice(item.amountDue)} - Hạn: {dayjs(item.dueDate).format('DD/MM/YYYY')}
-                  </Select.Option>
-                ))}
-            </Select>
-          </Form.Item>
-
           <Form.Item
             name="amount"
             label="Số tiền thanh toán"

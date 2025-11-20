@@ -328,6 +328,18 @@ export const installmentAPI = {
       }
     });
     return response.data;
+  },
+
+  // Get all installment items
+  getAllItems: async () => {
+    const response = await axios.get(`${ORDER_API}/InstallmentItem`);
+    return response.data;
+  },
+
+  // Get installment items by plan ID
+  getItemsByPlanId: async (planId) => {
+    const allItems = await installmentAPI.getAllItems();
+    return allItems.filter(item => item.installmentPlanId === planId);
   }
 };
 
