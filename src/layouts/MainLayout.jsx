@@ -57,7 +57,7 @@ const MainLayout = () => {
     // Menu cho Admin
     if (isAdmin()) {
       return [
-        // ...commonItems,
+        //...commonItems,
         {
           key: 'vehicles-management',
           icon: <CarOutlined />,
@@ -99,7 +99,8 @@ const MainLayout = () => {
             { key: '/reports/sales-by-region', label: 'Doanh số theo khu vực' },
             { key: '/reports/sales-by-agency', label: 'Doanh số theo đại lý' },
             { key: '/reports/inventory', label: 'Tồn kho' },
-            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' }
+            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' },
+            { key: '/reports/prediction', label: 'Dự báo kế hoạch' }
           ]
         }
       ];
@@ -118,6 +119,7 @@ const MainLayout = () => {
             { key: '/vehicles/management', label: 'Quản lý model & variant' },
             { key: '/vehicles/inventory', label: 'Tồn kho tổng' },
             { key: '/vehicles/allocation', label: 'Điều phối xe' }
+
           ]
         },
         {
@@ -151,7 +153,8 @@ const MainLayout = () => {
             { key: '/reports/sales-by-region', label: 'Doanh số theo khu vực' },
             { key: '/reports/sales-by-agency', label: 'Doanh số theo đại lý' },
             { key: '/reports/inventory', label: 'Tồn kho' },
-            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' }
+            { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' },
+            { key: '/reports/prediction', label: 'Dự báo kế hoạch' }
           ]
         }
       ];
@@ -228,7 +231,7 @@ const MainLayout = () => {
           children: [
             { key: '/vehicles/catalog', label: 'Danh mục xe' },
             { key: '/vehicles/compare', label: 'So sánh xe' },
-           
+
           ]
         },
         {
@@ -254,7 +257,7 @@ const MainLayout = () => {
             { key: '/customers/feedback', label: 'Phản hồi & Khiếu nại' }
           ]
         },
-        
+
       ];
 
       // Dealer Manager có thêm menu báo cáo
@@ -317,9 +320,9 @@ const MainLayout = () => {
 
   return (
     <Layout className="main-layout">
-      <Sider 
-        trigger={null} 
-        collapsible 
+      <Sider
+        trigger={null}
+        collapsible
         collapsed={collapsed}
         className="main-sidebar"
         width={260}
@@ -334,7 +337,7 @@ const MainLayout = () => {
             <CarOutlined className="logo-collapsed" />
           )}
         </div>
-        
+
         <Menu
           theme="dark"
           mode="inline"
@@ -358,7 +361,7 @@ const MainLayout = () => {
 
           <div className="header-right">
             <Space size="large">
-              
+
 
               <Dropdown
                 menu={{
@@ -370,8 +373,8 @@ const MainLayout = () => {
               >
                 <div className="user-info">
                   <Space>
-                    <Avatar 
-                      src={currentUser?.avatar_url} 
+                    <Avatar
+                      src={currentUser?.avatar_url}
                       icon={<UserOutlined />}
                       size="default"
                     />
