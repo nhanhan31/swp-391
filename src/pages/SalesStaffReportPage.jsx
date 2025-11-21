@@ -58,7 +58,7 @@ const SalesStaffReportPage = () => {
     setLoading(true);
     try {
       const agencyId = getAgencyId();
-      
+
       const [agencyData, quotationsData, ordersData] = await Promise.all([
         agencyAPI.getById(agencyId),
         quotationAPI.getByAgencyId(agencyId),
@@ -79,29 +79,29 @@ const SalesStaffReportPage = () => {
         // Get quotations by this staff in selected period
         const staffQuotations = filteredQuotations.filter(q => q.createBy === staff.id);
         const convertedQuotations = staffQuotations.filter(q => q.status === 'Converted');
-        
+
         // Calculate total sales from converted quotations
         const totalSales = convertedQuotations.reduce((sum, quotation) => sum + quotation.quotedPrice, 0);
-        
+
         // Get orders from converted quotations
         const quotationIds = convertedQuotations.map(q => q.id);
-        const staffOrders = ordersData.filter(order => 
-          order.createBy === staff.id && 
+        const staffOrders = ordersData.filter(order =>
+          order.createBy === staff.id &&
           order.details.some(d => quotationIds.includes(d.quotationId))
         );
-        
+
         // Count order statuses
         const completedOrders = staffOrders.filter(o => o.status === 'Complete');
         const pendingOrders = staffOrders.filter(o => o.status !== 'Complete').length;
-        
+
         // Calculate conversion rate (Converted quotations / Total quotations)
-        const conversionRate = staffQuotations.length > 0 
-          ? Math.round((convertedQuotations.length / staffQuotations.length) * 100) 
+        const conversionRate = staffQuotations.length > 0
+          ? Math.round((convertedQuotations.length / staffQuotations.length) * 100)
           : 0;
-        
+
         // Calculate average quotation value
-        const avgOrderValue = convertedQuotations.length > 0 
-          ? totalSales / convertedQuotations.length 
+        const avgOrderValue = convertedQuotations.length > 0
+          ? totalSales / convertedQuotations.length
           : 0;
 
         return {
@@ -255,8 +255,8 @@ const SalesStaffReportPage = () => {
       sorter: (a, b) => a.conversion_rate - b.conversion_rate,
       render: (rate) => (
         <div>
-          <Progress 
-            percent={rate} 
+          <Progress
+            percent={rate}
             size="small"
             status={rate >= 70 ? 'success' : rate >= 50 ? 'normal' : 'exception'}
           />
@@ -304,8 +304,8 @@ const SalesStaffReportPage = () => {
       fixed: 'right',
       align: 'center',
       render: (_, record) => (
-        <Button 
-          type="link" 
+        <Button
+          type="link"
           icon={<EyeOutlined />}
           onClick={() => handleViewDetail(record)}
         >
@@ -317,62 +317,62 @@ const SalesStaffReportPage = () => {
 
   return (
     <Spin spinning={loading} tip="Đang tải dữ liệu...">
-    <div className="sales-staff-report-page">
-      <div className="page-header" style={{ marginBottom: '24px' }}>
-        <Title level={2}>
-          <BarChartOutlined /> Báo cáo doanh số theo nhân viên
-        </Title>
-        <Text type="secondary">Theo dõi và đánh giá hiệu suất bán hàng của từng nhân viên</Text>
-      </div>
+      <div className="sales-staff-report-page">
+        <div className="page-header" style={{ marginBottom: '24px' }}>
+          <Title level={2}>
+            <BarChartOutlined /> Báo cáo doanh số theo nhân viên
+          </Title>
+          <Text type="secondary">Theo dõi và đánh giá hiệu suất bán hàng của từng nhân viên</Text>
+        </div>
 
-      {/* Filters */}
-      <Card style={{ marginBottom: '24px' }}>
-        <Space size="large">
-          <div>
-            <Text strong>Tháng:</Text>
-            <br />
-            <Select
-              value={selectedMonth}
-              onChange={setSelectedMonth}
-              style={{ width: 120 }}
-            >
-              {[...Array(12)].map((_, i) => (
-                <Select.Option key={i + 1} value={i + 1}>
-                  Tháng {i + 1}
-                </Select.Option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Text strong>Năm:</Text>
-            <br />
-            <Select
-              value={selectedYear}
-              onChange={setSelectedYear}
-              style={{ width: 120 }}
-            >
-              <Select.Option value={2023}>2023</Select.Option>
-              <Select.Option value={2024}>2024</Select.Option>
-              <Select.Option value={2025}>2025</Select.Option>
-            </Select>
-          </div>
-        </Space>
-      </Card>
+        {/* Filters */}
+        <Card style={{ marginBottom: '24px' }}>
+          <Space size="large">
+            <div>
+              <Text strong>Tháng:</Text>
+              <br />
+              <Select
+                value={selectedMonth}
+                onChange={setSelectedMonth}
+                style={{ width: 120 }}
+              >
+                {[...Array(12)].map((_, i) => (
+                  <Select.Option key={i + 1} value={i + 1}>
+                    Tháng {i + 1}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Text strong>Năm:</Text>
+              <br />
+              <Select
+                value={selectedYear}
+                onChange={setSelectedYear}
+                style={{ width: 120 }}
+              >
+                <Select.Option value={2023}>2023</Select.Option>
+                <Select.Option value={2024}>2024</Select.Option>
+                <Select.Option value={2025}>2025</Select.Option>
+              </Select>
+            </div>
+          </Space>
+        </Card>
 
-      {/* Overall Statistics */}
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Tổng doanh thu"
-              value={totalRevenue}
-              formatter={(value) => formatPrice(value)}
-              prefix={<DollarOutlined />}
-              valueStyle={{ color: '#f5222d' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
+        {/* Overall Statistics */}
+        <Row gutter={16} style={{ marginBottom: '24px' }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Tổng doanh thu"
+                value={totalRevenue}
+                formatter={(value) => formatPrice(value)}
+                prefix={<DollarOutlined />}
+                valueStyle={{ color: '#f5222d' }}
+              />
+            </Card>
+          </Col>
+          {/* <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="Tổng đơn hàng"
@@ -381,208 +381,208 @@ const SalesStaffReportPage = () => {
               valueStyle={{ color: '#1890ff' }}
             />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Số nhân viên"
-              value={staffSalesData.length}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Tỷ lệ chuyển đổi TB"
-              value={avgConversionRate}
-              suffix="%"
-              prefix={<RiseOutlined />}
-              valueStyle={{ color: '#faad14' }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Top Performers */}
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
-        {staffSalesData.slice(0, 3).map((staff, index) => (
-          <Col xs={24} sm={8} key={staff.id}>
+        </Col> */}
+          <Col xs={24} sm={12} md={6}>
             <Card>
-              <div style={{ textAlign: 'center' }}>
-                <Avatar 
-                  size={64} 
-                  src={staff.avatar_url} 
-                  icon={<UserOutlined />}
-                  style={{ marginBottom: '12px' }}
-                />
-                <br />
-                <Tag color={index === 0 ? 'gold' : index === 1 ? 'silver' : 'orange'}>
-                  Top {index + 1}
-                </Tag>
-                <Title level={4} style={{ margin: '8px 0' }}>
-                  {staff.staff_name}
-                </Title>
-                <Text type="secondary">{staff.staff_email}</Text>
-                <div style={{ marginTop: '16px' }}>
-                  <Text strong style={{ fontSize: '20px', color: '#f5222d' }}>
-                    {formatPrice(staff.total_sales)}
-                  </Text>
-                  <br />
-                  <Text type="secondary">
-                    {staff.total_orders} đơn hàng
-                  </Text>
-                </div>
-              </div>
+              <Statistic
+                title="Số nhân viên"
+                value={staffSalesData.length}
+                prefix={<UserOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
             </Card>
           </Col>
-        ))}
-      </Row>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Tỷ lệ chuyển đổi TB"
+                value={avgConversionRate}
+                suffix="%"
+                prefix={<RiseOutlined />}
+                valueStyle={{ color: '#faad14' }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
-      {/* Sales Staff Table */}
-      <Card title="Chi tiết doanh số nhân viên">
-        <Table
-          columns={columns}
-          dataSource={staffSalesData}
-          rowKey="id"
-          scroll={{ x: 1500 }}
-          pagination={{
-            pageSize: 10,
-            showTotal: (total) => `Tổng ${total} nhân viên`
-          }}
-        />
-      </Card>
-
-      {/* Detail Modal */}
-      <Modal
-        title={`Chi tiết hiệu suất - ${selectedStaff?.staff_name}`}
-        open={isDetailModalOpen}
-        onCancel={() => setIsDetailModalOpen(false)}
-        footer={[
-          <Button key="close" onClick={() => setIsDetailModalOpen(false)}>
-            Đóng
-          </Button>
-        ]}
-        width={900}
-      >
-        {selectedStaff && (
-          <>
-            <Descriptions bordered column={2} style={{ marginBottom: '24px' }}>
-              <Descriptions.Item label="Nhân viên" span={2}>
-                <Space>
-                  <Avatar src={selectedStaff.avatar_url} icon={<UserOutlined />} />
-                  <div>
-                    <Text strong>{selectedStaff.staff_name}</Text>
+        {/* Top Performers */}
+        <Row gutter={16} style={{ marginBottom: '24px' }}>
+          {staffSalesData.slice(0, 3).map((staff, index) => (
+            <Col xs={24} sm={8} key={staff.id}>
+              <Card>
+                <div style={{ textAlign: 'center' }}>
+                  <Avatar
+                    size={64}
+                    src={staff.avatar_url}
+                    icon={<UserOutlined />}
+                    style={{ marginBottom: '12px' }}
+                  />
+                  <br />
+                  <Tag color={index === 0 ? 'gold' : index === 1 ? 'silver' : 'orange'}>
+                    Top {index + 1}
+                  </Tag>
+                  <Title level={4} style={{ margin: '8px 0' }}>
+                    {staff.staff_name}
+                  </Title>
+                  <Text type="secondary">{staff.staff_email}</Text>
+                  <div style={{ marginTop: '16px' }}>
+                    <Text strong style={{ fontSize: '20px', color: '#f5222d' }}>
+                      {formatPrice(staff.total_sales)}
+                    </Text>
                     <br />
-                    <Text type="secondary">{selectedStaff.staff_email}</Text>
+                    {/* <Text type="secondary">
+                      {staff.total_orders} đơn hàng
+                    </Text> */}
                   </div>
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Tổng doanh số">
-                <Text strong style={{ color: '#f5222d', fontSize: '16px' }}>
-                  {formatPrice(selectedStaff.total_sales)}
-                </Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Tổng đơn hàng">
-                <Text strong>{selectedStaff.total_orders}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Hoàn thành">
-                <Tag color="green">{selectedStaff.completed_orders}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Đang xử lý">
-                <Tag color="orange">{selectedStaff.pending_orders}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Tổng báo giá">
-                <Tag color="blue">{selectedStaff.total_quotations}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Đã chuyển đổi">
-                <Tag color="cyan">{selectedStaff.converted_quotations}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Tỷ lệ chuyển đổi" span={2}>
-                <Progress 
-                  percent={selectedStaff.conversion_rate} 
-                  status={selectedStaff.conversion_rate >= 70 ? 'success' : selectedStaff.conversion_rate >= 50 ? 'normal' : 'exception'}
-                />
-              </Descriptions.Item>
-            </Descriptions>
+                </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
 
-            <Card title="Danh sách đơn hàng" size="small" style={{ marginBottom: '16px' }}>
-              <Table
-                dataSource={staffOrders}
-                rowKey="id"
-                size="small"
-                pagination={{ pageSize: 5 }}
-                columns={[
-                  { title: 'ID', dataIndex: 'id', width: 80 },
-                  { 
-                    title: 'Ngày đặt', 
-                    dataIndex: 'orderDate', 
-                    width: 150,
-                    render: (date) => dayjs(date).format('DD/MM/YYYY')
-                  },
-                  { 
-                    title: 'Tổng tiền', 
-                    dataIndex: 'totalAmount', 
-                    width: 150,
-                    render: (amount) => <Text strong>{formatPrice(amount)}</Text>
-                  },
-                  { 
-                    title: 'Trạng thái', 
-                    dataIndex: 'status', 
-                    width: 120,
-                    render: (status) => (
-                      <Tag color={status === 'Complete' ? 'green' : 'orange'}>
-                        {status === 'Complete' ? 'Hoàn thành' : 'Đang xử lý'}
-                      </Tag>
-                    )
-                  }
-                ]}
-              />
-            </Card>
+        {/* Sales Staff Table */}
+        <Card title="Chi tiết doanh số nhân viên">
+          <Table
+            columns={columns}
+            dataSource={staffSalesData}
+            rowKey="id"
+            scroll={{ x: 1500 }}
+            pagination={{
+              pageSize: 10,
+              showTotal: (total) => `Tổng ${total} nhân viên`
+            }}
+          />
+        </Card>
 
-            <Card title="Danh sách báo giá" size="small">
-              <Table
-                dataSource={staffQuotations}
-                rowKey="id"
-                size="small"
-                pagination={{ pageSize: 5 }}
-                columns={[
-                  { title: 'ID', dataIndex: 'id', width: 80 },
-                  { title: 'Tên báo giá', dataIndex: 'quotationName', width: 150 },
-                  { 
-                    title: 'Giá báo', 
-                    dataIndex: 'quotedPrice', 
-                    width: 150,
-                    render: (price) => formatPrice(price)
-                  },
-                  { 
-                    title: 'Trạng thái', 
-                    dataIndex: 'status', 
-                    width: 120,
-                    render: (status) => {
-                      const colors = {
-                        'Pending': 'default',
-                        'Accepted': 'blue',
-                        'Converted': 'green',
-                        'Rejected': 'red'
-                      };
-                      const texts = {
-                        'Pending': 'Chờ duyệt',
-                        'Accepted': 'Đã chấp nhận',
-                        'Converted': 'Đã chuyển đổi',
-                        'Rejected': 'Đã từ chối'
-                      };
-                      return <Tag color={colors[status]}>{texts[status]}</Tag>;
+        {/* Detail Modal */}
+        <Modal
+          title={`Chi tiết hiệu suất - ${selectedStaff?.staff_name}`}
+          open={isDetailModalOpen}
+          onCancel={() => setIsDetailModalOpen(false)}
+          footer={[
+            <Button key="close" onClick={() => setIsDetailModalOpen(false)}>
+              Đóng
+            </Button>
+          ]}
+          width={900}
+        >
+          {selectedStaff && (
+            <>
+              <Descriptions bordered column={2} style={{ marginBottom: '24px' }}>
+                <Descriptions.Item label="Nhân viên" span={2}>
+                  <Space>
+                    <Avatar src={selectedStaff.avatar_url} icon={<UserOutlined />} />
+                    <div>
+                      <Text strong>{selectedStaff.staff_name}</Text>
+                      <br />
+                      <Text type="secondary">{selectedStaff.staff_email}</Text>
+                    </div>
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="Tổng doanh số">
+                  <Text strong style={{ color: '#f5222d', fontSize: '16px' }}>
+                    {formatPrice(selectedStaff.total_sales)}
+                  </Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="Tổng đơn hàng">
+                  <Text strong>{selectedStaff.total_orders}</Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="Hoàn thành">
+                  <Tag color="green">{selectedStaff.completed_orders}</Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Đang xử lý">
+                  <Tag color="orange">{selectedStaff.pending_orders}</Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Tổng báo giá">
+                  <Tag color="blue">{selectedStaff.total_quotations}</Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Đã chuyển đổi">
+                  <Tag color="cyan">{selectedStaff.converted_quotations}</Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Tỷ lệ chuyển đổi" span={2}>
+                  <Progress
+                    percent={selectedStaff.conversion_rate}
+                    status={selectedStaff.conversion_rate >= 70 ? 'success' : selectedStaff.conversion_rate >= 50 ? 'normal' : 'exception'}
+                  />
+                </Descriptions.Item>
+              </Descriptions>
+
+              <Card title="Danh sách đơn hàng" size="small" style={{ marginBottom: '16px' }}>
+                <Table
+                  dataSource={staffOrders}
+                  rowKey="id"
+                  size="small"
+                  pagination={{ pageSize: 5 }}
+                  columns={[
+                    { title: 'ID', dataIndex: 'id', width: 80 },
+                    {
+                      title: 'Ngày đặt',
+                      dataIndex: 'orderDate',
+                      width: 150,
+                      render: (date) => dayjs(date).format('DD/MM/YYYY')
+                    },
+                    {
+                      title: 'Tổng tiền',
+                      dataIndex: 'totalAmount',
+                      width: 150,
+                      render: (amount) => <Text strong>{formatPrice(amount)}</Text>
+                    },
+                    {
+                      title: 'Trạng thái',
+                      dataIndex: 'status',
+                      width: 120,
+                      render: (status) => (
+                        <Tag color={status === 'Complete' ? 'green' : 'orange'}>
+                          {status === 'Complete' ? 'Hoàn thành' : 'Đang xử lý'}
+                        </Tag>
+                      )
                     }
-                  }
-                ]}
-              />
-            </Card>
-          </>
-        )}
-      </Modal>
-    </div>
+                  ]}
+                />
+              </Card>
+
+              <Card title="Danh sách báo giá" size="small">
+                <Table
+                  dataSource={staffQuotations}
+                  rowKey="id"
+                  size="small"
+                  pagination={{ pageSize: 5 }}
+                  columns={[
+                    { title: 'ID', dataIndex: 'id', width: 80 },
+                    { title: 'Tên báo giá', dataIndex: 'quotationName', width: 150 },
+                    {
+                      title: 'Giá báo',
+                      dataIndex: 'quotedPrice',
+                      width: 150,
+                      render: (price) => formatPrice(price)
+                    },
+                    {
+                      title: 'Trạng thái',
+                      dataIndex: 'status',
+                      width: 120,
+                      render: (status) => {
+                        const colors = {
+                          'Pending': 'default',
+                          'Accepted': 'blue',
+                          'Converted': 'green',
+                          'Rejected': 'red'
+                        };
+                        const texts = {
+                          'Pending': 'Chờ duyệt',
+                          'Accepted': 'Đã chấp nhận',
+                          'Converted': 'Đã chuyển đổi',
+                          'Rejected': 'Đã từ chối'
+                        };
+                        return <Tag color={colors[status]}>{texts[status]}</Tag>;
+                      }
+                    }
+                  ]}
+                />
+              </Card>
+            </>
+          )}
+        </Modal>
+      </div>
     </Spin>
   );
 };
