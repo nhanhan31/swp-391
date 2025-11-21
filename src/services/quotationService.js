@@ -165,7 +165,7 @@ export const userAPI = {
 // Agency Order Payment API
 export const agencyOrderPaymentAPI = {
   // Get all payments
-  getAll: async () => {
+  V: async () => {
     const response = await axios.get(`${AGENCY_API}/AgencyOrderPayment/get-all`);
     return response.data;
   },
@@ -327,7 +327,7 @@ export const installmentAPI = {
   updatePlanStatus: async (id, data) => {
     const formData = new FormData();
     formData.append('Status', data.status);
-    
+
     const response = await axios.put(`${ORDER_API}/InstallmentPlan/${id}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
@@ -404,7 +404,7 @@ export const deliveryAPI = {
     formData.append('DeliveryDate', data.deliveryDate);
     formData.append('DeliveryStatus', data.deliveryStatus);
     formData.append('Notes', data.notes || '');
-    
+
     // Add image before if provided
     if (data.imgUrlBefore) {
       formData.append('ImgUrlBefore', data.imgUrlBefore);
@@ -424,12 +424,12 @@ export const deliveryAPI = {
     formData.append('DeliveryDate', data.deliveryDate);
     formData.append('DeliveryStatus', data.deliveryStatus);
     formData.append('Notes', data.notes || '');
-    
+
     // Add image after if provided
     if (data.imgUrlAfter) {
       formData.append('ImgUrlAfter', data.imgUrlAfter);
     }
-    
+
     // Add image before if provided
     if (data.imgUrlBefore) {
       formData.append('ImgUrlBefore', data.imgUrlBefore);
@@ -531,6 +531,10 @@ export const emailVerificationAPI = {
       null,
       { params: { Email: email, Code: code } }
     );
+    return response.data;
+  },
+  getAll: async () => {
+    const response = await emailVerificationClient.get('/EmailVerifcation/GetAll');
     return response.data;
   }
 };
@@ -742,7 +746,7 @@ export const agencyContractAPI = {
     const response = await axios.get(`${AGENCY_API}/AgencyContract/${agencyId}`);
     return response.data;
   },
-  
+
   // Create new agency contract
   create: async (data) => {
     const response = await axios.post(`${AGENCY_API}/AgencyContract?AgencyId=${data.agencyId}`, {
@@ -758,7 +762,7 @@ export const agencyContractAPI = {
     });
     return response.data;
   },
-  
+
   // Update agency contract
   update: async (contractId, data) => {
     const formData = new FormData();
@@ -770,7 +774,7 @@ export const agencyContractAPI = {
     if (data.contractImageUrl) {
       formData.append('ContractImageUrl', data.contractImageUrl);
     }
-    
+
     const response = await axios.put(`${AGENCY_API}/AgencyContract/${contractId}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
@@ -983,7 +987,7 @@ export const vehicleInstanceAPI = {
         formData.append(key, data[key]);
       }
     });
-    
+
     const response = await axios.put(`https://allocation.agencymanagement.online/VehicleInstance/update/${id}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
