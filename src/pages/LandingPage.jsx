@@ -554,7 +554,7 @@ const LandingPage = () => {
             <Title level={3} style={{ margin: 0, color: '#fff' }}>EV Agency</Title>
           </div>
           <div className="header-actions">
-            <Button type="primary" size="large" onClick={() => navigate('login')}>
+            <Button type="primary" size="large" onClick={() => navigate('/login')}>
               Đăng nhập
             </Button>
           </div>

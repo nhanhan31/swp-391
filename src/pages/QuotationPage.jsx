@@ -1030,11 +1030,11 @@ const QuotationPage = () => {
                     {customers.map(customer => (
                       <Option key={customer.id} value={customer.id}>
                         {customer.fullName} - {customer.phone}
-                        {customer.class && customer.class !== 'Thường' && (
+                        {/* {customer.class && customer.class !== 'Thường' && (
                           <Tag color="gold" style={{ marginLeft: 8 }}>
                             {customer.class}
                           </Tag>
-                        )}
+                        )} */}
                       </Option>
                     ))}
                   </Select>
