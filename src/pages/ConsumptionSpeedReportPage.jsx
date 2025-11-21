@@ -462,7 +462,7 @@ const ConsumptionSpeedReportPage = () => {
               <Select.Option value="all">Tất cả mẫu xe</Select.Option>
               {vehicles.map(vehicle => (
                 <Select.Option key={vehicle.id} value={vehicle.id.toString()}>
-                  {vehicle.model} - {vehicle.color}
+                  {vehicle.variantName} - {vehicle.color}
                 </Select.Option>
               ))}
             </Select>

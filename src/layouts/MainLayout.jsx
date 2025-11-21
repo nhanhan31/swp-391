@@ -44,6 +44,11 @@ const MainLayout = () => {
     token: { colorBgContainer },
   } = theme.useToken();
 
+  // Get agency info from sessionStorage
+  const agencyInfo = JSON.parse(sessionStorage.getItem('agency_info') || 'null');
+  const userRole = JSON.parse(sessionStorage.getItem('user_info'))?.role|| JSON.parse(sessionStorage.getItem('user_info'))?.role?.role_name;
+  const userEmail = JSON.parse(sessionStorage.getItem('user_info'))?.email;
+
   // Menu items dựa trên role
   const getMenuItems = () => {
     const commonItems = [
@@ -111,6 +116,18 @@ const MainLayout = () => {
     if (isEVMStaff()) {
       return [
         // ...commonItems,
+        {
+          key: 'vehicles-management',
+          icon: <CarOutlined />,
+          label: 'Quản lý sản phẩm',
+          children: [
+            { key: '/vehicles/catalog', label: 'Danh mục xe điện' },
+            { key: '/vehicles/management', label: 'Quản lý model & variant' },
+            { key: '/vehicles/inventory', label: 'Tồn kho tổng' },
+            
+
+          ]
+        },
         
         {
           key: 'agencies-management',
@@ -280,16 +297,16 @@ const MainLayout = () => {
 
   // User dropdown menu
   const userMenuItems = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: 'Thông tin cá nhân',
-    },
-    {
-      key: 'settings',
-      icon: <SettingOutlined />,
-      label: 'Cài đặt',
-    },
+    // {
+    //   key: 'profile',
+    //   icon: <UserOutlined />,
+    //   label: 'Thông tin cá nhân',
+    // },
+    // {
+    //   key: 'settings',
+    //   icon: <SettingOutlined />,
+    //   label: 'Cài đặt',
+    // },
     {
       type: 'divider',
     },
@@ -371,10 +388,20 @@ const MainLayout = () => {
                       size="default"
                     />
                     <div className="user-details">
-                      <Text className="user-name">{currentUser?.full_name}</Text>
+                      <Text className="user-name">{currentUser?.full_name || currentUser?.fullName}</Text>
                       <Text className="user-role" type="secondary">
-                        {currentUser?.role?.role_name}
+                        {userEmail}
                       </Text>
+                      <Text className="user-role" type="secondary">
+
+                        {userRole}
+                        {agencyInfo && (
+                          <span style={{ marginLeft: '8px' }}>
+                            • {agencyInfo.agencyName}
+                          </span>
+                        )}
+                      </Text>
+                     
                     </div>
                   </Space>
                 </div>

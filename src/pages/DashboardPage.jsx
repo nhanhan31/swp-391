@@ -288,16 +288,9 @@ const DashboardPage = () => {
       {/* Header */}
       <div style={{ marginBottom: '24px' }}>
         <Title level={2}>
-          Chào mừng, {currentUser?.full_name}! 
-          <Tag color="blue" style={{ marginLeft: '12px' }}>
-            {currentUser?.role?.role_name}
-          </Tag>
+          Tổng quan đại lý
         </Title>
-        {currentUser?.agency && (
-          <Text type="secondary">
-            {currentUser.agency.agency_name} - {currentUser.agency.location}
-          </Text>
-        )}
+        
       </div>
 
       {/* Statistics Cards */}

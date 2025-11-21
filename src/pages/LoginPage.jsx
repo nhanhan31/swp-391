@@ -119,7 +119,7 @@ const LoginPage = () => {
               </Form.Item>
             </Form>
 
-            <Divider>Tài khoản demo</Divider>
+            {/* <Divider>Tài khoản demo</Divider> */}
             
             <div className="demo-accounts">
               <Space direction="vertical" style={{ width: '100%' }} size="small">
