@@ -37,12 +37,14 @@ import {
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { vehiclePriceAPI } from '../services/quotationService';
+import { useAuth } from '../context/AuthContext';
 
 const ALLOCATION_API = 'https://allocation.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
 
 const VehicleManagementPage = () => {
+  const { isAdmin } = useAuth();
   const [form] = Form.useForm();
   const [optionForm] = Form.useForm();
   const [selectedModelId, setSelectedModelId] = useState('all');
@@ -412,6 +414,8 @@ const VehicleManagementPage = () => {
       width: 80,
       align: 'center',
       render: (_, record) => {
+        if (!isAdmin()) return null;
+
         const items = [
           {
             key: 'view',
@@ -535,6 +539,8 @@ const VehicleManagementPage = () => {
       fixed: 'right',
       align: 'center',
       render: (_, record) => {
+        if (!isAdmin()) return null;
+
         const items = [
           {
             key: 'view',
@@ -576,9 +582,11 @@ const VehicleManagementPage = () => {
             </Title>
             <Text type="secondary">Theo dõi các dòng xe, phiên bản và cấu hình màu sắc</Text>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-            Thêm phiên bản mới
-          </Button>
+          {isAdmin() && (
+            <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+              Thêm phiên bản mới
+            </Button>
+          )}
         </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
@@ -626,9 +634,11 @@ const VehicleManagementPage = () => {
       </Row>
 
       <Card title="Danh sách dòng xe" style={{ marginBottom: '24px' }} extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateOption}>
-          Thêm dòng xe mới
-        </Button>
+        isAdmin() && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateOption}>
+            Thêm dòng xe mới
+          </Button>
+        )
       }>
         <Table
           columns={modelColumns}

@@ -116,6 +116,18 @@ const MainLayout = () => {
     if (isEVMStaff()) {
       return [
         // ...commonItems,
+        {
+          key: 'vehicles-management',
+          icon: <CarOutlined />,
+          label: 'Quản lý sản phẩm',
+          children: [
+            { key: '/vehicles/catalog', label: 'Danh mục xe điện' },
+            { key: '/vehicles/management', label: 'Quản lý model & variant' },
+            { key: '/vehicles/inventory', label: 'Tồn kho tổng' },
+            
+
+          ]
+        },
         
         {
           key: 'agencies-management',
