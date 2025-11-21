@@ -174,6 +174,7 @@ const UsersPage = () => {
         full_name: record.full_name,
         email: record.email,
         phone: record.phone,
+        role_id: record.role_id,
         status: record.status
       });
     } else if (mode === 'create') {
@@ -225,7 +226,7 @@ const UsersPage = () => {
         formData.append('Email', values.email);
         formData.append('Phone', values.phone);
         formData.append('Status', values.status);
-        formData.append('RoleId', selectedUser.role_id);
+        formData.append('RoleId', values.role_id);
         
         if (avatarFile) {
           formData.append('AvatarFile', avatarFile);
@@ -688,6 +689,22 @@ const UsersPage = () => {
             >
               <Input prefix={<UserOutlined />} placeholder="Nguyễn Văn A" />
             </Form.Item>
+
+            {modalMode === 'edit' && (
+              <Form.Item
+                name="role_id"
+                label="Vai trò"
+                rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
+              >
+                <Select placeholder="Chọn vai trò">
+                  {roles.map(role => (
+                    <Select.Option key={role.id} value={role.id}>
+                      {role.roleName}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
 
             <Row gutter={16}>
               <Col span={12}>
