@@ -30,7 +30,7 @@ import dayjs from 'dayjs';
 import axios from 'axios';
 
 const ANALYTIC_API = 'https://analytic.agencymanagement.online/api';
-const VEHICLE_API = 'https://vehicle.agencymanagement.online/api';
+const VEHICLE_API = 'https://allocation.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -454,13 +454,15 @@ const ConsumptionSpeedReportPage = () => {
             <Select
               value={selectedVehicle}
               onChange={setSelectedVehicle}
-              style={{ width: 200 }}
+              style={{ width: 250 }}
               placeholder="Chọn mẫu xe"
+              showSearch
+              optionFilterProp="children"
             >
               <Select.Option value="all">Tất cả mẫu xe</Select.Option>
               {vehicles.map(vehicle => (
                 <Select.Option key={vehicle.id} value={vehicle.id.toString()}>
-                  {vehicle.model}
+                  {vehicle.model} - {vehicle.color}
                 </Select.Option>
               ))}
             </Select>

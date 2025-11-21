@@ -351,6 +351,12 @@ export const installmentAPI = {
 
 // Order API
 export const orderAPI = {
+  // Get all orders
+  getAll: async () => {
+    const response = await axios.get(`${ORDER_API}/Order`);
+    return response.data;
+  },
+
   // Get orders by agencyId
   getByAgencyId: async (agencyId) => {
     const response = await axios.get(`${ORDER_API}/Order/agency/${agencyId}`);

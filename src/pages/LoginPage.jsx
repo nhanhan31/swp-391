@@ -19,10 +19,10 @@ const LoginPage = () => {
       
       if (result.success) {
         message.success('Đăng nhập thành công!');
-        
+        console.log('Logged in user:', result.user);
         // Điều hướng theo role
         const userRole = result.user?.role?.roleName;
-        if (userRole === 'Admin' || userRole === 'EVMStaff') {
+        if (result.user.role === 'Admin' || result.user.role === 'EVStaff') {
           navigate('/agencies');
         } else {
           navigate('/dashboard');
