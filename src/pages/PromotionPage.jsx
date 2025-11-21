@@ -65,18 +65,29 @@ const PromotionPage = () => {
     try {
       const agencyId = getAgencyId();
       
-      // Fetch promotions by agencyId and all vehicles
-      const [promotionsData, vehiclesData] = await Promise.all([
-        promotionAPI.getByAgencyId(agencyId),
+      // Fetch all promotions (national + agency) and vehicles
+      const [allPromotionsData, vehiclesData] = await Promise.all([
+        promotionAPI.getAll(),
         vehicleAPI.getAll()
       ]);
       
-      // Enrich promotions with vehicle info
-      const enrichedPromotions = promotionsData.map(promo => {
+      // Filter promotions: national (agencyId null/0) + current agency
+      const filteredPromotions = allPromotionsData.filter(p => 
+        !p.agencyId || p.agencyId === 0 || p.agencyId === agencyId
+      );
+      
+      // Enrich promotions with vehicle info and scope
+      const enrichedPromotions = filteredPromotions.map(promo => {
         const vehicle = vehiclesData.find(v => v.id === promo.vehicleId);
+        const isNational = !promo.agencyId || promo.agencyId === 0;
         return {
           ...promo,
-          vehicleName: vehicle ? `${vehicle.modelName} ${vehicle.variantName}` : 'N/A'
+          vehicleName: vehicle 
+            ? `${vehicle.option?.modelName || vehicle.modelName || ''} ${vehicle.variantName || ''}`.trim() 
+            : 'N/A',
+          vehicleColor: vehicle?.color || '',
+          isNational: isNational,
+          scope: isNational ? 'Toàn quốc' : 'Đại lý'
         };
       });
 
@@ -211,10 +222,32 @@ const PromotionPage = () => {
       render: (text) => <Text strong>{text}</Text>
     },
     {
+      title: 'Phạm vi',
+      dataIndex: 'scope',
+      key: 'scope',
+      width: 120,
+      render: (text, record) => (
+        <Tag color={record.isNational ? 'blue' : 'green'} icon={record.isNational ? '🌍' : '🏢'}>
+          {text}
+        </Tag>
+      )
+    },
+    {
       title: 'Xe áp dụng',
       dataIndex: 'vehicleName',
       key: 'vehicleName',
-      width: 200
+      width: 200,
+      render: (text, record) => (
+        <div>
+          <Text strong>{text}</Text>
+          {record.vehicleColor && (
+            <>
+              <br />
+              <Tag color="cyan" style={{ fontSize: '11px' }}>{record.vehicleColor}</Tag>
+            </>
+          )}
+        </div>
+      )
     },
     {
       title: 'Giảm giá',
@@ -261,6 +294,15 @@ const PromotionPage = () => {
       width: 80,
       align: 'center',
       render: (_, record) => {
+        // Only allow edit/delete for agency promotions (not national)
+        if (record.isNational) {
+          return (
+            <Tooltip title="Chỉ xem (Khuyến mãi toàn quốc)">
+              <Button type="text" icon={<EyeOutlined />} disabled />
+            </Tooltip>
+          );
+        }
+
         const items = [
           {
             key: 'edit',
@@ -294,10 +336,15 @@ const PromotionPage = () => {
   ];
 
   // Calculate statistics
+  const nationalPromotions = promotions.filter(p => p.isNational);
+  const agencyPromotions = promotions.filter(p => !p.isNational);
+  
   const stats = {
     total: promotions.length,
     active: promotions.filter(p => getStatusInfo(p).text === 'Đang áp dụng').length,
-    expired: promotions.filter(p => getStatusInfo(p).text === 'Hết hạn').length
+    expired: promotions.filter(p => getStatusInfo(p).text === 'Hết hạn').length,
+    national: nationalPromotions.length,
+    agency: agencyPromotions.length
   };
 
   return (
@@ -326,7 +373,7 @@ const PromotionPage = () => {
 
       {/* Statistics */}
       <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <div style={{ textAlign: 'center' }}>
               <GiftOutlined style={{ fontSize: '32px', color: '#1890ff' }} />
@@ -337,7 +384,7 @@ const PromotionPage = () => {
             </div>
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <div style={{ textAlign: 'center' }}>
               <CheckCircleOutlined style={{ fontSize: '32px', color: '#52c41a' }} />
@@ -348,30 +395,73 @@ const PromotionPage = () => {
             </div>
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={12} lg={6}>
           <Card>
             <div style={{ textAlign: 'center' }}>
-              <CloseCircleOutlined style={{ fontSize: '32px', color: '#ff4d4f' }} />
-              <Title level={2} style={{ margin: '8px 0', color: '#ff4d4f' }}>
-                {stats.expired}
+              <span style={{ fontSize: '32px' }}></span>
+              <Title level={2} style={{ margin: '8px 0', color: '#1890ff' }}>
+                {stats.national}
               </Title>
-              <Text type="secondary">Hết hạn</Text>
+              <Text type="secondary">Toàn quốc</Text>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ fontSize: '32px' }}></span>
+              <Title level={2} style={{ margin: '8px 0', color: '#52c41a' }}>
+                {stats.agency}
+              </Title>
+              <Text type="secondary">Đại lý</Text>
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Promotions Table */}
-      <Card>
+      {/* Promotions Tables */}
+      {/* National Promotions Table */}
+      <Card 
+        title={
+          <span>
+            <span style={{ fontSize: '20px', marginRight: '8px' }}></span>
+            Khuyến mãi toàn quốc
+          </span>
+        }
+        style={{ marginBottom: '24px' }}
+      >
         <Table
-          columns={columns}
-          dataSource={promotions}
+          columns={columns.filter(col => col.key !== 'scope')}
+          dataSource={nationalPromotions}
           rowKey="id"
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1200 }}
           pagination={{
             pageSize: 10,
             showTotal: (total) => `Tổng ${total} chương trình`
           }}
+          locale={{ emptyText: 'Chưa có khuyến mãi toàn quốc' }}
+        />
+      </Card>
+
+      {/* Agency Promotions Table */}
+      <Card 
+        title={
+          <span>
+            <span style={{ fontSize: '20px', marginRight: '8px' }}></span>
+            Khuyến mãi đại lý
+          </span>
+        }
+      >
+        <Table
+          columns={columns.filter(col => col.key !== 'scope')}
+          dataSource={agencyPromotions}
+          rowKey="id"
+          scroll={{ x: 1200 }}
+          pagination={{
+            pageSize: 10,
+            showTotal: (total) => `Tổng ${total} chương trình`
+          }}
+          locale={{ emptyText: 'Chưa có khuyến mãi đại lý' }}
         />
       </Card>
 
@@ -402,7 +492,7 @@ const PromotionPage = () => {
             >
               {vehicles.map(vehicle => (
                 <Option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.modelName} {vehicle.variantName}
+                  {vehicle.option?.modelName || vehicle.modelName || 'N/A'} - {vehicle.variantName} ({vehicle.color})
                 </Option>
               ))}
             </Select>

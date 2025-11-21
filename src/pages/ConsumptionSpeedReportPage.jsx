@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Row,
@@ -10,7 +10,10 @@ import {
   Tag,
   Progress,
   Space,
-  Tooltip
+  Tooltip,
+  Spin,
+  message,
+  DatePicker
 } from 'antd';
 import {
   DashboardOutlined,
@@ -24,134 +27,177 @@ import {
 } from '@ant-design/icons';
 import { Column, Line, Area } from '@ant-design/plots';
 import dayjs from 'dayjs';
-import { vehicles } from '../data/mockData';
+import axios from 'axios';
+
+const ANALYTIC_API = 'https://analytic.agencymanagement.online/api';
+const VEHICLE_API = 'https://vehicle.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
-
-// Mock consumption speed data
-const mockConsumptionData = [
-  // VF e34
-  { vehicle_id: 1, month: 'T1', sales: 70, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 35 },
-  { vehicle_id: 1, month: 'T2', sales: 78, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 32 },
-  { vehicle_id: 1, month: 'T3', sales: 73, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 33 },
-  { vehicle_id: 1, month: 'T4', sales: 87, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 28 },
-  { vehicle_id: 1, month: 'T5', sales: 95, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 25 },
-  { vehicle_id: 1, month: 'T6', sales: 88, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 27 },
-  { vehicle_id: 1, month: 'T7', sales: 100, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 23 },
-  { vehicle_id: 1, month: 'T8', sales: 105, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 22 },
-  { vehicle_id: 1, month: 'T9', sales: 112, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 20 },
-  { vehicle_id: 1, month: 'T10', sales: 108, inventory_start: 220, inventory_end: 220, avg_days_to_sell: 21 },
-
-  // VF 8
-  { vehicle_id: 2, month: 'T1', sales: 57, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 38 },
-  { vehicle_id: 2, month: 'T2', sales: 63, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 35 },
-  { vehicle_id: 2, month: 'T3', sales: 60, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 36 },
-  { vehicle_id: 2, month: 'T4', sales: 68, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 32 },
-  { vehicle_id: 2, month: 'T5', sales: 75, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 29 },
-  { vehicle_id: 2, month: 'T6', sales: 70, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 31 },
-  { vehicle_id: 2, month: 'T7', sales: 78, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 28 },
-  { vehicle_id: 2, month: 'T8', sales: 82, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 26 },
-  { vehicle_id: 2, month: 'T9', sales: 87, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 25 },
-  { vehicle_id: 2, month: 'T10', sales: 85, inventory_start: 177, inventory_end: 177, avg_days_to_sell: 26 },
-
-  // VF 9
-  { vehicle_id: 3, month: 'T1', sales: 41, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 42 },
-  { vehicle_id: 3, month: 'T2', sales: 45, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 40 },
-  { vehicle_id: 3, month: 'T3', sales: 43, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 41 },
-  { vehicle_id: 3, month: 'T4', sales: 50, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 37 },
-  { vehicle_id: 3, month: 'T5', sales: 55, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 34 },
-  { vehicle_id: 3, month: 'T6', sales: 52, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 35 },
-  { vehicle_id: 3, month: 'T7', sales: 58, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 32 },
-  { vehicle_id: 3, month: 'T8', sales: 60, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 31 },
-  { vehicle_id: 3, month: 'T9', sales: 63, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 30 },
-  { vehicle_id: 3, month: 'T10', sales: 62, inventory_start: 121, inventory_end: 121, avg_days_to_sell: 30 },
-
-  // VF 5 Plus
-  { vehicle_id: 4, month: 'T1', sales: 95, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 30 },
-  { vehicle_id: 4, month: 'T2', sales: 105, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 28 },
-  { vehicle_id: 4, month: 'T3', sales: 100, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 29 },
-  { vehicle_id: 4, month: 'T4', sales: 112, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 26 },
-  { vehicle_id: 4, month: 'T5', sales: 120, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 24 },
-  { vehicle_id: 4, month: 'T6', sales: 115, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 25 },
-  { vehicle_id: 4, month: 'T7', sales: 125, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 23 },
-  { vehicle_id: 4, month: 'T8', sales: 130, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 22 },
-  { vehicle_id: 4, month: 'T9', sales: 135, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 21 },
-  { vehicle_id: 4, month: 'T10', sales: 133, inventory_start: 295, inventory_end: 295, avg_days_to_sell: 22 },
-
-  // VF 6
-  { vehicle_id: 5, month: 'T1', sales: 50, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 36 },
-  { vehicle_id: 5, month: 'T2', sales: 55, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 34 },
-  { vehicle_id: 5, month: 'T3', sales: 53, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 35 },
-  { vehicle_id: 5, month: 'T4', sales: 60, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 31 },
-  { vehicle_id: 5, month: 'T5', sales: 65, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 29 },
-  { vehicle_id: 5, month: 'T6', sales: 62, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 30 },
-  { vehicle_id: 5, month: 'T7', sales: 68, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 27 },
-  { vehicle_id: 5, month: 'T8', sales: 72, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 26 },
-  { vehicle_id: 5, month: 'T9', sales: 75, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 25 },
-  { vehicle_id: 5, month: 'T10', sales: 73, inventory_start: 150, inventory_end: 150, avg_days_to_sell: 25 }
-];
+const { RangePicker } = DatePicker;
 
 const ConsumptionSpeedReportPage = () => {
   const [selectedVehicle, setSelectedVehicle] = useState('all');
-  const [selectedPeriod, setSelectedPeriod] = useState('10months');
+  const [dateRange, setDateRange] = useState([
+    dayjs().subtract(6, 'month').startOf('month'),
+    dayjs().endOf('month')
+  ]);
+  const [analyticData, setAnalyticData] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch vehicles
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      try {
+        const response = await axios.get(`${VEHICLE_API}/Vehicle`, {
+          headers: {
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+        setVehicles(response.data || []);
+      } catch (error) {
+        console.error('Error fetching vehicles:', error);
+        message.error('Không thể tải danh sách xe');
+      }
+    };
+
+    fetchVehicles();
+  }, []);
+
+  // Fetch analytic data
+  useEffect(() => {
+    const fetchAnalyticData = async () => {
+      if (!dateRange || dateRange.length !== 2) return;
+
+      setLoading(true);
+      try {
+        const [startDate, endDate] = dateRange;
+        const params = {
+          startYear: startDate.year(),
+          startMonth: startDate.month() + 1,
+          endYear: endDate.year(),
+          endMonth: endDate.month() + 1
+        };
+
+        if (selectedVehicle !== 'all') {
+          params.vehicleId = parseInt(selectedVehicle);
+        }
+
+        const response = await axios.get(`${ANALYTIC_API}/Analytic/data`, {
+          params,
+          headers: {
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+
+        setAnalyticData(response.data || []);
+      } catch (error) {
+        console.error('Error fetching analytic data:', error);
+        message.error('Không thể tải dữ liệu phân tích');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnalyticData();
+  }, [selectedVehicle, dateRange]);
 
   // Calculate statistics
   const statistics = useMemo(() => {
-    const filteredData = selectedVehicle === 'all'
-      ? mockConsumptionData
-      : mockConsumptionData.filter(item => item.vehicle_id === parseInt(selectedVehicle));
+    if (!analyticData || analyticData.length === 0) {
+      return {
+        totalSales: 0,
+        avgTurnoverRate: 0,
+        fastestMoving: null,
+        slowestMoving: null,
+        vehicleStats: []
+      };
+    }
 
-    // Group by vehicle
-    const byVehicle = filteredData.reduce((acc, item) => {
-      const vehicle = vehicles.find(v => v.id === item.vehicle_id);
-      const key = vehicle?.model || 'Unknown';
+    // Group by vehicle and month
+    const byVehicle = analyticData.reduce((acc, item) => {
+      const vehicle = vehicles.find(v => v.id === item.vehicleId);
+      const key = item.vehicleId;
       
       if (!acc[key]) {
         acc[key] = {
-          vehicle_id: item.vehicle_id,
-          model: key,
+          vehicle_id: item.vehicleId,
+          model: vehicle?.model || `Vehicle ${item.vehicleId}`,
           totalSales: 0,
-          avgDaysToSell: 0,
-          count: 0,
-          monthlyData: []
+          monthlyData: [],
+          rollingAvg3: 0,
+          rollingAvg6: 0,
+          testDrivesTotal: 0,
+          quotationsTotal: 0
         };
       }
-      acc[key].totalSales += item.sales;
-      acc[key].avgDaysToSell += item.avg_days_to_sell;
-      acc[key].count += 1;
-      acc[key].monthlyData.push(item);
+
+      acc[key].totalSales += item.unitsSold;
+      acc[key].monthlyData.push({
+        year: item.year,
+        month: item.month,
+        sales: item.unitsSold,
+        rollingAvg3: item.rollingAvgSales3Months,
+        rollingAvg6: item.rollingAvgSales6Months,
+        testDrives: item.testDrivesCount,
+        quotations: item.quotationsAcceptedCount
+      });
+      acc[key].testDrivesTotal += item.testDrivesCount || 0;
+      acc[key].quotationsTotal += item.quotationsAcceptedCount || 0;
+
       return acc;
     }, {});
 
     const vehicleStats = Object.values(byVehicle).map(item => {
-      const avgDays = Math.round(item.avgDaysToSell / item.count);
-      const avgMonthlySales = Math.round(item.totalSales / item.count);
+      const monthCount = item.monthlyData.length;
+      const avgMonthlySales = monthCount > 0 ? Math.round(item.totalSales / monthCount) : 0;
+      
+      // Calculate avg days to sell based on rolling average
+      const lastMonthData = item.monthlyData[item.monthlyData.length - 1];
+      const avgSales = lastMonthData?.rollingAvg3 || avgMonthlySales || 1;
+      const avgDaysToSell = avgSales > 0 ? Math.round(30 / avgSales) : 30;
       
       // Calculate turnover rate (times per year)
-      const turnoverRate = Math.round((365 / avgDays) * 10) / 10;
+      const turnoverRate = avgDaysToSell > 0 ? Math.round((365 / avgDaysToSell) * 10) / 10 : 0;
       
       // Calculate trend (last 3 months vs previous 3 months)
-      const recentMonths = item.monthlyData.slice(-3);
-      const previousMonths = item.monthlyData.slice(-6, -3);
-      const recentAvg = recentMonths.reduce((sum, m) => sum + m.sales, 0) / 3;
-      const previousAvg = previousMonths.reduce((sum, m) => sum + m.sales, 0) / 3;
-      const trend = recentAvg > previousAvg ? 'up' : recentAvg < previousAvg ? 'down' : 'stable';
-      const trendPercent = Math.round(((recentAvg - previousAvg) / previousAvg) * 100);
+      let trend = 'stable';
+      let trendPercent = 0;
+      
+      if (item.monthlyData.length >= 6) {
+        const recentMonths = item.monthlyData.slice(-3);
+        const previousMonths = item.monthlyData.slice(-6, -3);
+        const recentAvg = recentMonths.reduce((sum, m) => sum + m.sales, 0) / 3;
+        const previousAvg = previousMonths.reduce((sum, m) => sum + m.sales, 0) / 3;
+        
+        if (previousAvg > 0) {
+          trendPercent = Math.round(((recentAvg - previousAvg) / previousAvg) * 100);
+          trend = recentAvg > previousAvg ? 'up' : recentAvg < previousAvg ? 'down' : 'stable';
+        }
+      }
+
+      // Calculate conversion rate (quotations to sales)
+      const conversionRate = item.quotationsTotal > 0 
+        ? Math.round((item.totalSales / item.quotationsTotal) * 100) 
+        : 0;
 
       return {
         ...item,
-        avgDaysToSell: avgDays,
+        avgDaysToSell,
         avgMonthlySales,
         turnoverRate,
         trend,
-        trendPercent
+        trendPercent,
+        conversionRate
       };
     }).sort((a, b) => a.avgDaysToSell - b.avgDaysToSell);
 
     const totalSales = vehicleStats.reduce((sum, item) => sum + item.totalSales, 0);
-    const avgTurnoverRate = Math.round((vehicleStats.reduce((sum, item) => sum + item.turnoverRate, 0) / vehicleStats.length) * 10) / 10;
-    const fastestMoving = vehicleStats[0];
-    const slowestMoving = vehicleStats[vehicleStats.length - 1];
+    const avgTurnoverRate = vehicleStats.length > 0
+      ? Math.round((vehicleStats.reduce((sum, item) => sum + item.turnoverRate, 0) / vehicleStats.length) * 10) / 10
+      : 0;
+    const fastestMoving = vehicleStats[0] || null;
+    const slowestMoving = vehicleStats[vehicleStats.length - 1] || null;
 
     return {
       totalSales,
@@ -160,24 +206,41 @@ const ConsumptionSpeedReportPage = () => {
       slowestMoving,
       vehicleStats
     };
-  }, [selectedVehicle]);
+  }, [analyticData, vehicles]);
 
   // Data for charts
   const chartData = useMemo(() => {
-    const data = selectedVehicle === 'all'
-      ? mockConsumptionData
-      : mockConsumptionData.filter(item => item.vehicle_id === parseInt(selectedVehicle));
+    if (!analyticData || analyticData.length === 0) return [];
 
-    return data.map(item => {
-      const vehicle = vehicles.find(v => v.id === item.vehicle_id);
-      const turnoverRate = Math.round((30 / item.avg_days_to_sell) * 10) / 10;
-      return {
-        ...item,
-        model: vehicle?.model || 'Unknown',
-        turnoverRate
-      };
+    // Group by vehicle and month
+    const grouped = analyticData.reduce((acc, item) => {
+      const vehicle = vehicles.find(v => v.id === item.vehicleId);
+      const monthKey = `T${item.month}/${item.year}`;
+      
+      acc.push({
+        vehicle_id: item.vehicleId,
+        model: vehicle?.model || `Vehicle ${item.vehicleId}`,
+        month: monthKey,
+        sales: item.unitsSold,
+        rollingAvg3: item.rollingAvgSales3Months,
+        rollingAvg6: item.rollingAvgSales6Months,
+        avg_days_to_sell: item.rollingAvgSales3Months > 0 
+          ? Math.round(30 / item.rollingAvgSales3Months)
+          : 30,
+        turnoverRate: item.rollingAvgSales3Months > 0
+          ? Math.round((365 / (30 / item.rollingAvgSales3Months)) * 10) / 10
+          : 0
+      });
+
+      return acc;
+    }, []);
+
+    return grouped.sort((a, b) => {
+      const [monthA, yearA] = a.month.replace('T', '').split('/').map(Number);
+      const [monthB, yearB] = b.month.replace('T', '').split('/').map(Number);
+      return yearA - yearB || monthA - monthB;
     });
-  }, [selectedVehicle]);
+  }, [analyticData, vehicles]);
 
   // Line chart - Sales trend
   const lineConfig = {
@@ -269,6 +332,20 @@ const ConsumptionSpeedReportPage = () => {
       key: 'avgMonthlySales',
       width: 100,
       render: (value) => <Text>{value} xe</Text>
+    },
+    {
+      title: 'Tỷ lệ chuyển đổi',
+      dataIndex: 'conversionRate',
+      key: 'conversionRate',
+      width: 120,
+      render: (value) => (
+        <Tooltip title="Tỷ lệ báo giá được chấp nhận thành đơn hàng">
+          <Text strong style={{ color: value >= 50 ? '#52c41a' : value >= 30 ? '#faad14' : '#ff4d4f' }}>
+            {value}%
+          </Text>
+        </Tooltip>
+      ),
+      sorter: (a, b) => a.conversionRate - b.conversionRate
     },
     {
       title: 'Thời gian bán',
@@ -364,39 +441,38 @@ const ConsumptionSpeedReportPage = () => {
   ];
 
   return (
-    <div className="consumption-speed-report-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <DashboardOutlined /> Báo cáo tốc độ tiêu thụ
-          </Title>
-          <Text type="secondary">Phân tích xu hướng và tốc độ bán hàng theo mẫu xe</Text>
+    <Spin spinning={loading}>
+      <div className="consumption-speed-report-page">
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <DashboardOutlined /> Báo cáo tốc độ tiêu thụ
+            </Title>
+            <Text type="secondary">Phân tích xu hướng và tốc độ bán hàng theo mẫu xe</Text>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Select
+              value={selectedVehicle}
+              onChange={setSelectedVehicle}
+              style={{ width: 200 }}
+              placeholder="Chọn mẫu xe"
+            >
+              <Select.Option value="all">Tất cả mẫu xe</Select.Option>
+              {vehicles.map(vehicle => (
+                <Select.Option key={vehicle.id} value={vehicle.id.toString()}>
+                  {vehicle.model}
+                </Select.Option>
+              ))}
+            </Select>
+            <RangePicker
+              value={dateRange}
+              onChange={setDateRange}
+              picker="month"
+              format="MM/YYYY"
+              style={{ width: 250 }}
+            />
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <Select
-            value={selectedVehicle}
-            onChange={setSelectedVehicle}
-            style={{ width: 200 }}
-            options={[
-              { value: 'all', label: 'Tất cả mẫu xe' },
-              ...vehicles.map(vehicle => ({
-                value: vehicle.id.toString(),
-                label: vehicle.model
-              }))
-            ]}
-          />
-          <Select
-            value={selectedPeriod}
-            onChange={setSelectedPeriod}
-            style={{ width: 150 }}
-            options={[
-              { value: '3months', label: '3 tháng gần nhất' },
-              { value: '6months', label: '6 tháng gần nhất' },
-              { value: '10months', label: '10 tháng' }
-            ]}
-          />
-        </div>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
@@ -430,12 +506,12 @@ const ConsumptionSpeedReportPage = () => {
                   <Text>Bán nhanh nhất</Text>
                 </Space>
               }
-              value={statistics.fastestMoving?.avgDaysToSell}
+              value={statistics.fastestMoving?.avgDaysToSell || 0}
               suffix="ngày"
               valueStyle={{ color: '#52c41a', fontSize: '20px' }}
             />
             <Text type="secondary" style={{ fontSize: '12px' }}>
-              {statistics.fastestMoving?.model}
+              {statistics.fastestMoving?.model || '-'}
             </Text>
           </Card>
         </Col>
@@ -448,12 +524,12 @@ const ConsumptionSpeedReportPage = () => {
                   <Text>Bán chậm nhất</Text>
                 </Space>
               }
-              value={statistics.slowestMoving?.avgDaysToSell}
+              value={statistics.slowestMoving?.avgDaysToSell || 0}
               suffix="ngày"
               valueStyle={{ color: '#ff4d4f', fontSize: '20px' }}
             />
             <Text type="secondary" style={{ fontSize: '12px' }}>
-              {statistics.slowestMoving?.model}
+              {statistics.slowestMoving?.model || '-'}
             </Text>
           </Card>
         </Col>
@@ -488,7 +564,8 @@ const ConsumptionSpeedReportPage = () => {
           pagination={false}
         />
       </Card>
-    </div>
+      </div>
+    </Spin>
   );
 };
 

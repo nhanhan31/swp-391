@@ -257,7 +257,7 @@ const AppRoutes = () => {
 
                         <Route
                             path="reports/agency-debts"
-                            element={<AgencyDebtReportPage />}
+                            element={<AgencyDebtPage />}
                         />
                         <Route
                             path="reports/prediction"

@@ -19,7 +19,8 @@ import {
   Spin,
   Tabs,
   Statistic,
-  Avatar
+  Avatar,
+  Alert
 } from 'antd';
 import {
   CarOutlined,
@@ -36,7 +37,7 @@ import {
   InfoCircleOutlined
 } from '@ant-design/icons';
 import { vehicleAPI, vehicleInstanceAPI } from '../services/vehicleService';
-import { agencyAPI, testDriveAPI, agencyInventoryAPI } from '../services/quotationService';
+import { agencyAPI, testDriveAPI, agencyInventoryAPI, emailVerificationAPI } from '../services/quotationService';
 import { customerAPI } from '../services/quotationService';
 import dayjs from 'dayjs';
 import '../styles/LandingPage.css';
@@ -66,6 +67,15 @@ const LandingPage = () => {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isAgencyModalOpen, setIsAgencyModalOpen] = useState(false); // Modal xem kho đại lý
+
+  // Customer Check & OTP States
+  const [isExistingCustomer, setIsExistingCustomer] = useState(null); // null = chưa check, true = existing, false = new
+  const [existingCustomerData, setExistingCustomerData] = useState(null);
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [emailToVerify, setEmailToVerify] = useState('');
+  const [pendingBookingData, setPendingBookingData] = useState(null);
+  const [checkingEmail, setCheckingEmail] = useState(false);
 
   // Filter Inputs
   const [searchText, setSearchText] = useState('');
@@ -197,40 +207,161 @@ const LandingPage = () => {
     setSelectedVehicle(vehicle);
     setIsBookingModalOpen(true);
     form.resetFields();
+    // Reset customer check state
+    setIsExistingCustomer(null);
+    setExistingCustomerData(null);
+    setEmailToVerify('');
     if (preSelectedAgencyId) {
       form.setFieldsValue({ agencyId: preSelectedAgencyId });
     }
   };
 
+  const handleEmailBlur = async (e) => {
+    const email = e.target.value?.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return; // Invalid email, don't check
+    }
+
+    try {
+      setCheckingEmail(true);
+      const customers = await customerAPI.getAll();
+      const existingCustomer = customers.find(
+        c => c.email?.toLowerCase() === email.toLowerCase()
+      );
+
+      if (existingCustomer) {
+        setIsExistingCustomer(true);
+        setExistingCustomerData(existingCustomer);
+        // Auto-fill customer info for existing customer
+        form.setFieldsValue({
+          fullName: existingCustomer.fullName,
+          phone: existingCustomer.phone,
+          address: existingCustomer.address
+        });
+        message.success('Chào mừng khách hàng quay lại! Thông tin của bạn đã được điền sẵn.');
+      } else {
+        setIsExistingCustomer(false);
+        setExistingCustomerData(null);
+        message.info('Email mới - vui lòng điền thông tin để tạo tài khoản.');
+      }
+    } catch (error) {
+      console.error('Error checking customer:', error);
+      // If check fails, treat as new customer
+      setIsExistingCustomer(false);
+    } finally {
+      setCheckingEmail(false);
+    }
+  };
+
   const handleSubmitBooking = async (values) => {
     try {
+      // If existing customer, proceed directly with booking
+      if (isExistingCustomer && existingCustomerData) {
+        await processTestDriveBooking(existingCustomerData.id, values);
+        return;
+      }
+
+      // If new customer, trigger OTP verification first
+      if (isExistingCustomer === false) {
+        setEmailToVerify(values.email);
+        setPendingBookingData(values);
+        
+        // Send OTP
+        setLoading(true);
+        try {
+          await emailVerificationAPI.sendOTP(values.email);
+          message.success('Mã OTP đã được gửi đến email của bạn!');
+          setIsVerifyModalOpen(true);
+        } catch (error) {
+          console.error('Error sending OTP:', error);
+          message.error('Không thể gửi mã OTP. Vui lòng kiểm tra lại email!');
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      // If email not checked yet, show warning
+      message.warning('Vui lòng nhập email để kiểm tra tài khoản!');
+      
+    } catch (error) {
+      console.error('Error in booking flow:', error);
+      message.error('Có lỗi xảy ra. Vui lòng thử lại!');
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      message.error('Vui lòng nhập mã OTP 6 chữ số!');
+      return;
+    }
+
+    try {
       setLoading(true);
-      // Step 1: Create customer
+      await emailVerificationAPI.verifyOTP(emailToVerify, otpCode);
+      message.success('Xác thực email thành công!');
+      
+      // Create customer and proceed with booking
+      await processPendingBooking();
+      
+      setIsVerifyModalOpen(false);
+      setOtpCode('');
+    } catch (error) {
+      console.error('Error verifying OTP:', error);
+      message.error('Mã OTP không đúng hoặc đã hết hạn!');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processPendingBooking = async () => {
+    if (!pendingBookingData) return;
+
+    try {
+      setLoading(true);
+      
+      // Create new customer
       const customerData = {
-        fullName: values.fullName,
-        phone: values.phone,
-        email: values.email,
-        address: values.address || '',
-        identityCard: ''
+        fullName: pendingBookingData.fullName,
+        phone: pendingBookingData.phone,
+        email: pendingBookingData.email,
+        address: pendingBookingData.address || '',
+        agencyId: pendingBookingData.agencyId,
+        class: "string"
       };
 
-      // Note: In real app, check if customer exists first
       const customer = await customerAPI.create(customerData);
+      
+      // Process test drive booking
+      await processTestDriveBooking(customer.id, pendingBookingData);
+      
+      setPendingBookingData(null);
+      
+    } catch (error) {
+      console.error('Error creating customer and booking:', error);
+      message.error('Có lỗi xảy ra khi tạo tài khoản. Vui lòng thử lại!');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      // Step 2: Find a valid vehicle instance for this appointment
-      // We just need any instance ID of this model at this agency for the record
+  const processTestDriveBooking = async (customerId, values) => {
+    try {
+      setLoading(true);
+      
+      // Find vehicle instance at selected agency
       const instanceId = getAvailableInstance(selectedVehicle.id, values.agencyId);
 
       if (!instanceId) {
-        // Fallback: Nếu không có xe ở đại lý này, có thể báo lỗi hoặc vẫn cho đặt (tùy logic nghiệp vụ)
-        // Ở đây ta cho phép đặt nhưng warning, hoặc lấy đại 1 ID giả định nếu API bắt buộc
         message.warning('Đại lý hiện chưa có sẵn mẫu xe này trong kho, nhưng chúng tôi vẫn ghi nhận yêu cầu.');
       }
 
       const testDriveData = {
-        customerId: customer.id,
+        customerId: customerId,
         agencyId: values.agencyId,
-        vehicleInstanceId: instanceId || 0, // API might require int
+        vehicleInstanceId: instanceId || 0,
         appointmentDate: values.appointmentDate.format('YYYY-MM-DDTHH:mm:ss'),
         status: 'Pending',
         notes: values.notes || ''
@@ -240,10 +371,13 @@ const LandingPage = () => {
       message.success('Đặt lịch lái thử thành công! Chúng tôi sẽ liên hệ với bạn sớm.');
       setIsBookingModalOpen(false);
       form.resetFields();
-
+      setIsExistingCustomer(null);
+      setExistingCustomerData(null);
+      
     } catch (error) {
       console.error('Error booking test drive:', error);
-      message.error('Có lỗi xảy ra. Vui lòng kiểm tra lại thông tin!');
+      message.error('Có lỗi xảy ra khi đặt lịch. Vui lòng kiểm tra lại thông tin!');
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -787,30 +921,6 @@ const LandingPage = () => {
               layout="vertical"
               onFinish={handleSubmitBooking}
             >
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    label="Họ và tên"
-                    name="fullName"
-                    rules={[{ required: true, message: 'Vui lòng nhập họ tên!' }]}
-                  >
-                    <Input prefix={<UserOutlined />} placeholder="Nguyễn Văn A" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="Số điện thoại"
-                    name="phone"
-                    rules={[
-                      { required: true, message: 'Vui lòng nhập số điện thoại!' },
-                      { pattern: /^[0-9]{10}$/, message: 'Số điện thoại không hợp lệ!' }
-                    ]}
-                  >
-                    <Input prefix={<PhoneOutlined />} placeholder="0901234567" />
-                  </Form.Item>
-                </Col>
-              </Row>
-
               <Form.Item
                 label="Email"
                 name="email"
@@ -818,16 +928,86 @@ const LandingPage = () => {
                   { required: true, message: 'Vui lòng nhập email!' },
                   { type: 'email', message: 'Email không hợp lệ!' }
                 ]}
+                help={checkingEmail ? 'Đang kiểm tra email...' : (
+                  isExistingCustomer === true ? '✓ Khách hàng đã tồn tại - thông tin đã được điền sẵn' :
+                  isExistingCustomer === false ? 'Email mới - vui lòng điền đầy đủ thông tin' :
+                  'Nhập email để kiểm tra tài khoản'
+                )}
               >
-                <Input prefix={<MailOutlined />} placeholder="email@example.com" />
+                <Input 
+                  prefix={<MailOutlined />} 
+                  placeholder="email@example.com"
+                  onBlur={handleEmailBlur}
+                  disabled={checkingEmail}
+                />
               </Form.Item>
 
-              <Form.Item
-                label="Địa chỉ"
-                name="address"
-              >
-                <Input prefix={<EnvironmentOutlined />} placeholder="Địa chỉ của bạn" />
-              </Form.Item>
+              {isExistingCustomer !== null && (
+                <>
+                  {isExistingCustomer && (
+                    <Alert
+                      message="Khách hàng cũ"
+                      description="Thông tin của bạn đã được điền sẵn. Vui lòng chọn đại lý và thời gian để đặt lịch."
+                      type="success"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                    />
+                  )}
+
+                  {!isExistingCustomer && (
+                    <Alert
+                      message="Khách hàng mới"
+                      description="Vui lòng điền đầy đủ thông tin. Sau khi xác nhận, chúng tôi sẽ gửi mã OTP để xác thực email của bạn."
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                    />
+                  )}
+
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        label="Họ và tên"
+                        name="fullName"
+                        rules={[{ required: true, message: 'Vui lòng nhập họ tên!' }]}
+                      >
+                        <Input 
+                          prefix={<UserOutlined />} 
+                          placeholder="Nguyễn Văn A"
+                          disabled={isExistingCustomer}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        label="Số điện thoại"
+                        name="phone"
+                        rules={[
+                          { required: true, message: 'Vui lòng nhập số điện thoại!' },
+                          { pattern: /^[0-9]{10}$/, message: 'Số điện thoại không hợp lệ!' }
+                        ]}
+                      >
+                        <Input 
+                          prefix={<PhoneOutlined />} 
+                          placeholder="0901234567"
+                          disabled={isExistingCustomer}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Form.Item
+                    label="Địa chỉ"
+                    name="address"
+                  >
+                    <Input 
+                      prefix={<EnvironmentOutlined />} 
+                      placeholder="Địa chỉ của bạn"
+                      disabled={isExistingCustomer}
+                    />
+                  </Form.Item>
+                </>
+              )}
 
               <Form.Item
                 label="Chọn đại lý"
@@ -915,6 +1095,50 @@ const LandingPage = () => {
             </Form>
           </div>
         )}
+      </Modal>
+
+      {/* OTP Verification Modal */}
+      <Modal
+        title="Xác Thực Email"
+        open={isVerifyModalOpen}
+        onCancel={() => {
+          setIsVerifyModalOpen(false);
+          setOtpCode('');
+        }}
+        footer={null}
+        width={400}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <Text>
+            Mã OTP đã được gửi đến email: <Text strong>{emailToVerify}</Text>
+          </Text>
+          <Input
+            placeholder="Nhập mã OTP (6 chữ số)"
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value)}
+            maxLength={6}
+            style={{ marginTop: 16, marginBottom: 16 }}
+            size="large"
+          />
+          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Button
+              onClick={() => {
+                setIsVerifyModalOpen(false);
+                setOtpCode('');
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="primary"
+              onClick={handleVerifyOTP}
+              loading={loading}
+              disabled={!otpCode || otpCode.length !== 6}
+            >
+              Xác Nhận
+            </Button>
+          </Space>
+        </div>
       </Modal>
     </Layout>
   );

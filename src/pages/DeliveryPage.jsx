@@ -38,7 +38,7 @@ const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 const DeliveryPage = () => {
-  const { currentUser, getAgencyId } = useAuth();
+  const { currentUser, getAgencyId, isDealerStaff, isDealerManager } = useAuth();
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,13 +67,13 @@ const DeliveryPage = () => {
         console.log('Orders data:', orders);
 
         // Transform and enrich data
-        const enrichedDeliveries = await Promise.all(
+        let enrichedDeliveries = await Promise.all(
           deliveriesData.map(async (delivery) => {
             try {
               // 2. Find order from the orders array
               const order = orders.find(o => o.id === delivery.orderId);
               console.log('Found order:', order);
-              
+
               // 3. Get customer from order.customerId
               let customer = null;
               if (order && order.customerId) {
@@ -96,7 +96,7 @@ const DeliveryPage = () => {
                 try {
                   quotation = await quotationAPI.getById(quotationId);
                   console.log('Quotation data:', quotation);
-                  
+
                   // 5. Get vehicle info from quotation
                   if (quotation && quotation.vehicle) {
                     vehicleInfo = {
@@ -119,6 +119,7 @@ const DeliveryPage = () => {
                 order: order,
                 customer: customer,
                 quotation: quotation,
+                quotation_createBy: quotation?.createBy,
                 vehicle: vehicleInfo,
                 // For backward compatibility
                 customer_name: customer?.fullName || 'N/A',
@@ -141,6 +142,13 @@ const DeliveryPage = () => {
           })
         );
 
+        // Filter by role: Staff chỉ xem deliveries từ quotation họ tạo
+        if (isDealerStaff()) {
+          enrichedDeliveries = enrichedDeliveries.filter(
+            delivery => delivery.quotation_createBy == currentUser?.id
+          );
+        }
+
         setDeliveries(enrichedDeliveries);
       } catch (error) {
         console.error('Error fetching deliveries:', error);
@@ -151,19 +159,19 @@ const DeliveryPage = () => {
     };
 
     fetchDeliveries();
-  }, [currentUser, getAgencyId]);
+  }, [currentUser, getAgencyId, isDealerStaff]);
 
   // Get delivery status info
   const getDeliveryStatusInfo = (status) => {
     const statusMap = {
-      pending: { 
-        color: 'warning', 
-        text: 'Đang giao', 
+      pending: {
+        color: 'warning',
+        text: 'Đang giao',
         icon: <ClockCircleOutlined />
       },
-      delivered: { 
-        color: 'success', 
-        text: 'Đã giao xe', 
+      delivered: {
+        color: 'success',
+        text: 'Đã giao xe',
         icon: <CheckCircleOutlined />
       }
     };
@@ -195,7 +203,7 @@ const DeliveryPage = () => {
     if (info.file) {
       const file = info.file.originFileObj || info.file;
       setImageAfterFile(file);
-      
+
       // Create preview
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -209,7 +217,7 @@ const DeliveryPage = () => {
   const handleSubmitComplete = async () => {
     try {
       const values = await form.validateFields();
-      
+
       if (!imageAfterFile) {
         message.warning('Vui lòng tải lên ảnh xe sau khi giao');
         return;
@@ -230,69 +238,130 @@ const DeliveryPage = () => {
         try {
           const currentOrderStatus = selectedDelivery.order.status?.toLowerCase();
           let newOrderStatus = 'Completed';
-          
+
           // Check if customer has finished installment payment
           // 1. Find contract by quotationId
           if (selectedDelivery.order.details && selectedDelivery.order.details.length > 0) {
             const quotationId = selectedDelivery.order.details[0].quotationId;
-            
+
             try {
               // Get all contracts and find the one with matching quotationId
               const agencyId = getAgencyId();
               const contracts = await contractAPI.getByAgencyId(agencyId);
               const matchingContract = contracts.find(c => c.quotationId === quotationId);
-              
+
               if (matchingContract) {
                 console.log('Found contract for order:', matchingContract);
-                
+
                 // 2. Get installment plans for this contract
                 const installmentPlans = await installmentAPI.getByContractId(matchingContract.id);
                 console.log('Installment plans:', installmentPlans);
-                
+
                 // 3. Determine payment type and check completion
-                if (installmentPlans.length > 0) {
+                if (currentOrderStatus === 'paid') {
+                  // Đã thanh toán đủ → Hoàn thành
+                  newOrderStatus = 'Completed';
+                  console.log('Order status is Paid → Setting status to Completed');
+                } else if (currentOrderStatus === 'in_transit') {
+                  // Order đang giao hàng - cần kiểm tra loại thanh toán
+                  if (installmentPlans.length > 0) {
+                    // TRẢ GÓP - kiểm tra tình trạng thanh toán
+                    console.log('Order status is In_Transit + INSTALLMENT → Checking payment status');
+                    
+                    const hasUncompletedInstallment = installmentPlans.some(plan => {
+                      const status = plan.status?.toLowerCase();
+
+                      // Method 1: Check by status
+                      if (status === 'completed') {
+                        return false; // Đã hoàn thành
+                      }
+
+                      // Method 2: Check by comparing items vs payments
+                      if (plan.items && plan.payments) {
+                        const totalItems = plan.items.length; // Tổng số kỳ
+                        const paidItems = plan.payments.length; // Số kỳ đã trả
+
+                        console.log(`Plan ${plan.id}: ${paidItems}/${totalItems} kỳ đã trả`);
+
+                        if (paidItems >= totalItems) {
+                          return false; // Đã trả đủ
+                        }
+                      }
+
+                      // Method 3: Check by amount
+                      if (plan.principalAmount && plan.totalPaid) {
+                        const totalAmount = plan.principalAmount;
+                        const paidAmount = plan.totalPaid;
+
+                        console.log(`Plan ${plan.id}: Đã trả ${paidAmount}/${totalAmount} VND`);
+
+                        if (paidAmount >= totalAmount) {
+                          return false; // Đã trả đủ
+                        }
+                      }
+
+                      return true; // Chưa hoàn thành
+                    });
+
+                    if (hasUncompletedInstallment) {
+                      newOrderStatus = 'Pending-Payment';
+                      console.log('Installment not completed → Setting status to Pending-Payment');
+                    } else {
+                      newOrderStatus = 'Completed';
+                      console.log('Installment completed → Setting status to Completed');
+                    }
+                  } else {
+                    // TRẢ THẲNG - đã giao xe = hoàn thành
+                    newOrderStatus = 'Completed';
+                    console.log('Order status is In_Transit + FULL PAYMENT → Setting status to Completed');
+                  }
+                } else if (currentOrderStatus === 'partial-ready') {
+                  // Thanh toán 1 phần trước, còn nợ phần sau
+                  newOrderStatus = 'Pending-Payment';
+                  console.log('Order status is Partial-Ready → Setting status to Pending-Payment');
+                } else if (installmentPlans.length > 0) {
                   // HAS INSTALLMENT PLAN - TRẢ GÓP
                   console.log('Payment type: INSTALLMENT (Trả góp)');
-                  
+
                   // Check each installment plan
                   const hasUncompletedInstallment = installmentPlans.some(plan => {
                     const status = plan.status?.toLowerCase();
-                    
+
                     // Method 1: Check by status
                     if (status === 'completed') {
                       return false; // Đã hoàn thành
                     }
-                    
+
                     // Method 2: Check by comparing items vs payments
                     if (plan.items && plan.payments) {
                       const totalItems = plan.items.length; // Tổng số kỳ
                       const paidItems = plan.payments.length; // Số kỳ đã trả
-                      
+
                       console.log(`Plan ${plan.id}: ${paidItems}/${totalItems} kỳ đã trả`);
-                      
+
                       if (paidItems >= totalItems) {
                         // Đã trả đủ số kỳ
                         return false;
                       }
                     }
-                    
+
                     // Method 3: Check by amount
                     if (plan.principalAmount && plan.totalPaid) {
                       const totalAmount = plan.principalAmount;
                       const paidAmount = plan.totalPaid;
-                      
+
                       console.log(`Plan ${plan.id}: Đã trả ${paidAmount}/${totalAmount} VND`);
-                      
+
                       if (paidAmount >= totalAmount) {
                         // Đã trả đủ tiền
                         return false;
                       }
                     }
-                    
+
                     // Chưa hoàn thành
                     return true;
                   });
-                  
+
                   if (hasUncompletedInstallment) {
                     // Trả góp chưa xong - còn nợ
                     newOrderStatus = 'Pending-Payment';
@@ -305,25 +374,10 @@ const DeliveryPage = () => {
                 } else {
                   // NO INSTALLMENT PLAN - TRẢ THẲNG
                   console.log('Payment type: FULL PAYMENT (Trả thẳng)');
-                  
-                  // Check if already paid in full
-                  if (currentOrderStatus === 'paid') {
-                    // Đã thanh toán đủ → Hoàn thành
-                    newOrderStatus = 'Completed';
-                    console.log('Already paid in full → Setting status to Completed');
-                  } else if (currentOrderStatus === 'partial-ready') {
-                    // Thanh toán 1 phần trước, còn nợ phần sau
-                    newOrderStatus = 'Pending-Payment';
-                    console.log('Partial payment, waiting for remaining → Setting status to Pending-Payment');
-                  } else if (currentOrderStatus === 'partial') {
-                    // Thanh toán 1 phần nhưng chưa sẵn sàng giao
-                    newOrderStatus = 'Pending-Payment';
-                    console.log('Partial payment → Setting status to Pending-Payment');
-                  } else {
-                    // Chưa thanh toán hoặc status không rõ
-                    newOrderStatus = 'Pending-Payment';
-                    console.log('Payment status unclear → Defaulting to Pending-Payment');
-                  }
+
+                  // Mặc định cho trả thẳng khi không có thông tin rõ ràng
+                  newOrderStatus = 'Pending-Payment';
+                  console.log('Full payment but status unclear → Defaulting to Pending-Payment');
                 }
               } else {
                 // No contract found, fallback to order status
@@ -343,7 +397,7 @@ const DeliveryPage = () => {
               }
             }
           }
-          
+
           await orderAPI.update(selectedDelivery.order.id, newOrderStatus);
           console.log(`Order status updated from ${currentOrderStatus} to ${newOrderStatus}`);
         } catch (error) {
@@ -361,16 +415,16 @@ const DeliveryPage = () => {
       // Refresh deliveries
       const agencyId = getAgencyId();
       const deliveriesData = await deliveryAPI.getByAgencyId(agencyId);
-      
+
       // Get all orders for this agency at once
       const orders = await orderAPI.getByAgencyId(agencyId);
-      
-      const enrichedDeliveries = await Promise.all(
+
+      let enrichedDeliveries = await Promise.all(
         deliveriesData.map(async (delivery) => {
           try {
             // Find order from the orders array
             const order = orders.find(o => o.id === delivery.orderId);
-            
+
             // Get customer from order.customerId
             let customer = null;
             if (order && order.customerId) {
@@ -391,7 +445,7 @@ const DeliveryPage = () => {
               const quotationId = order.details[0].quotationId;
               try {
                 quotation = await quotationAPI.getById(quotationId);
-                
+
                 // Get vehicle info from quotation
                 if (quotation && quotation.vehicle) {
                   vehicleInfo = {
@@ -414,6 +468,7 @@ const DeliveryPage = () => {
               order: order,
               customer: customer,
               quotation: quotation,
+              quotation_createBy: quotation?.createBy,
               vehicle: vehicleInfo,
               // For backward compatibility
               customer_name: customer?.fullName || 'N/A',
@@ -435,6 +490,14 @@ const DeliveryPage = () => {
           }
         })
       );
+
+      // Filter by role after refresh
+      if (isDealerStaff()) {
+        enrichedDeliveries = enrichedDeliveries.filter(
+          delivery => delivery.quotation_createBy == currentUser?.id
+        );
+      }
+
       setDeliveries(enrichedDeliveries);
 
     } catch (error) {

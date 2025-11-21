@@ -37,8 +37,8 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuth } from '../context/AuthContext';
-import { quotationAPI, userAPI, customerAPI, contractAPI, orderAPI, agencyInventoryAPI, promotionAPI } from '../services/quotationService';
-import { vehicleAPI, vehicleInstanceAPI, vehiclePriceAPI } from '../services/vehicleService';
+import { quotationAPI, userAPI, customerAPI, contractAPI, orderAPI, agencyInventoryAPI, promotionAPI, vehicleInstanceAPI } from '../services/quotationService';
+import { vehicleAPI, vehiclePriceAPI } from '../services/vehicleService';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -203,25 +203,36 @@ const QuotationPage = () => {
         }
 
         const allInstancesData = await vehicleInstanceAPI.getAll();
+        // Filter: chỉ lấy instance thuộc agency và status khác Reserved
         const filteredInstances = (isDealerManager() || isDealerStaff())
-          ? (allInstancesData || []).filter(inst => availableInstanceIds.includes(inst.id))
-          : (allInstancesData || []);
+          ? (allInstancesData || []).filter(inst => 
+              availableInstanceIds.includes(inst.id) && 
+              inst.status?.toLowerCase() !== 'reserved'
+            )
+          : (allInstancesData || []).filter(inst => inst.status?.toLowerCase() !== 'reserved');
 
         setVehicleInstances(filteredInstances);
 
         const uniqueVehicleIds = [...new Set(filteredInstances.map(inst => inst.vehicleId))];
 
-        const [vehiclesData, pricesData, promotionsData] = await Promise.all([
+        const [vehiclesData, pricesData, allPromotionsData] = await Promise.all([
           vehicleAPI.getAll(),
           vehiclePriceAPI.getAll(),
-          agencyId ? promotionAPI.getByAgencyId(agencyId) : Promise.resolve([])
+          promotionAPI.getAll()
         ]);
 
         const filteredVehicles = (vehiclesData || []).filter(v => uniqueVehicleIds.includes(v.id));
 
+        // Filter promotions: national (agencyId null/0) + current agency promotions
+        const filteredPromotions = agencyId 
+          ? (allPromotionsData || []).filter(p => 
+              !p.agencyId || p.agencyId === 0 || p.agencyId === agencyId
+            )
+          : (allPromotionsData || []).filter(p => !p.agencyId || p.agencyId === 0);
+
         setVehicles(filteredVehicles);
         setVehiclePrices(pricesData || []);
-        setPromotions(promotionsData || []);
+        setPromotions(filteredPromotions);
       } catch (error) {
         console.error('Error fetching vehicle data:', error);
       }
@@ -264,7 +275,7 @@ const QuotationPage = () => {
       const group = vehicleGroups[vehicle.id];
       if (!group) return null;
 
-      const price = vehiclePrices.find(p => p.vehicleId === vehicle.id);
+      const price = vehiclePrices.find(p => p.vehicleId === vehicle.id && p.priceType === 'MSRP');
 
       return {
         id: vehicle.id,
@@ -274,7 +285,8 @@ const QuotationPage = () => {
         price: price?.priceAmount || 0,
         battery_capacity: vehicle.batteryCapacity,
         range_km: vehicle.rangeKM,
-        image_url: vehicle.vehicleImage
+        image_url: vehicle.vehicleImage,
+        availableInstances: group.instances.filter(inst => inst.status?.toLowerCase() !== 'reserved').length
       };
     }).filter(Boolean);
   }, [vehicles, vehicleInstances, vehiclePrices]);
@@ -451,6 +463,12 @@ const QuotationPage = () => {
       cancelText: 'Hủy',
       onOk: async () => {
         try {
+          console.log('🚀 Starting convert to order for quotation:', quotation.id);
+          
+          // 0. Get fresh quotation data from API to ensure we have vehicle info
+          const freshQuotation = await quotationAPI.getById(quotation.id);
+          console.log('📄 Fresh quotation data:', freshQuotation);
+          
           // 1. Create Order
           const orderPayload = {
             customerId: quotation.customer_id,
@@ -465,8 +483,28 @@ const QuotationPage = () => {
           };
 
           const newOrder = await orderAPI.create(orderPayload);
+          console.log('✅ Created order:', newOrder);
 
-          
+          // 2. Update VehicleInstance status to Reserved
+          if (freshQuotation.vehicle?.id) {
+            try {
+              const vehicleInstanceId = freshQuotation.vehicle.id;
+              console.log('🔄 Updating VehicleInstance:', vehicleInstanceId);
+              
+              await vehicleInstanceAPI.update(vehicleInstanceId, {
+                VehicleId: freshQuotation.vehicle.vehicleId,
+                Vin: freshQuotation.vehicle.vin,
+                EngineNumber: freshQuotation.vehicle.engineNumber,
+                Status: 'Reserved'
+              });
+              console.log(`✅ Updated VehicleInstance ${vehicleInstanceId} to Reserved`);
+            } catch (error) {
+              console.error('❌ Error updating VehicleInstance status:', error);
+              console.error('Error details:', error.response?.data);
+            }
+          } else {
+            console.warn('⚠️ No vehicle info found in quotation');
+          }
 
           // 3. Update quotation status to converted
           const updatePayload = {
@@ -503,29 +541,105 @@ const QuotationPage = () => {
     const vehicle = vehicleData.find(v => v.id === vehicleId);
     setSelectedVehicle(vehicle);
     if (vehicle) {
-      // Tìm khuyến mãi đang áp dụng cho xe này
-      const now = dayjs();
-      const activePromotion = promotions.find(promo => 
-        promo.vehicleId === vehicleId &&
-        dayjs(promo.startDate).isBefore(now) &&
-        dayjs(promo.endDate).isAfter(now)
-      );
-
-      let finalPrice = vehicle.price;
-      let discountAmount = 0;
-
-      if (activePromotion) {
-        discountAmount = activePromotion.discountAmount;
-        finalPrice = vehicle.price - discountAmount;
-        message.success(`Đã áp dụng khuyến mãi: ${activePromotion.promoName} - Giảm ${new Intl.NumberFormat('vi-VN').format(discountAmount)} VND`);
-      }
-
-      form.setFieldsValue({
-        quoted_price: finalPrice,
-        discount_amount: discountAmount,
-        original_price: vehicle.price
-      });
+      calculateFinalPrice(vehicleId, vehicle, form.getFieldValue('customer_id'));
     }
+  };
+
+  // Khi chọn khách hàng
+  const handleCustomerChange = (customerId) => {
+    const vehicleId = form.getFieldValue('vehicle_id');
+    if (vehicleId) {
+      const vehicle = vehicleData.find(v => v.id === vehicleId);
+      if (vehicle) {
+        calculateFinalPrice(vehicleId, vehicle, customerId);
+      }
+    }
+  };
+
+  // Calculate final price with promotions and customer class discount
+  const calculateFinalPrice = (vehicleId, vehicle, customerId) => {
+    const now = dayjs();
+    const agencyId = getAgencyId();
+    
+    // 1. Tìm TẤT CẢ khuyến mãi đang áp dụng cho xe này
+    const activePromotions = promotions.filter(promo => 
+      promo.vehicleId === vehicleId &&
+      dayjs(promo.startDate).isBefore(now) &&
+      dayjs(promo.endDate).isAfter(now)
+    );
+
+    let basePrice = vehicle.price;
+    let totalPromotionDiscount = 0;
+    const promotionDetails = [];
+
+    // 2. Áp dụng TẤT CẢ khuyến mãi (cộng dồn)
+    activePromotions.forEach(promo => {
+      const discount = promo.discountAmount;
+      totalPromotionDiscount += discount;
+      
+      const scope = (!promo.agencyId || promo.agencyId === 0) 
+        ? 'Toàn quốc' 
+        : 'Đại lý';
+      
+      promotionDetails.push({
+        name: promo.promoName,
+        scope,
+        discount
+      });
+    });
+
+    // Trừ tổng khuyến mãi từ giá gốc
+    basePrice = basePrice - totalPromotionDiscount;
+
+    let classDiscount = 0;
+    let classDiscountPercent = 0;
+
+    // 3. Áp dụng giảm giá theo class khách hàng (tính trên giá sau khuyến mãi)
+    if (customerId) {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer && customer.class) {
+        const customerClass = customer.class.toLowerCase();
+        if (customerClass === 'vip') {
+          classDiscountPercent = 3;
+        } else if (customerClass === 'kim cương' || customerClass === 'kim cuong') {
+          classDiscountPercent = 5;
+        }
+        // Thường: 0%
+        
+        if (classDiscountPercent > 0) {
+          classDiscount = Math.round(basePrice * classDiscountPercent / 100);
+        }
+      }
+    }
+
+    const finalPrice = basePrice - classDiscount;
+    const totalDiscount = totalPromotionDiscount + classDiscount;
+
+    // Display messages
+    const messages = [];
+    
+    // Hiển thị từng khuyến mãi
+    promotionDetails.forEach(promo => {
+      messages.push(`KM ${promo.scope}: ${promo.name} -${new Intl.NumberFormat('vi-VN').format(promo.discount)}đ`);
+    });
+    
+    // Hiển thị giảm giá class
+    if (classDiscountPercent > 0) {
+      messages.push(`Giảm giá ${classDiscountPercent}% (${customer.class}): -${new Intl.NumberFormat('vi-VN').format(classDiscount)}đ`);
+    }
+    
+    if (messages.length > 0) {
+      message.success(messages.join(' | '), 5);
+    }
+
+    form.setFieldsValue({
+      quoted_price: finalPrice,
+      discount_amount: totalDiscount,
+      original_price: vehicle.price,
+      promotion_discount: totalPromotionDiscount,
+      class_discount: classDiscount,
+      class_discount_percent: classDiscountPercent
+    });
   };
 
   // Submit form
@@ -737,7 +851,7 @@ const QuotationPage = () => {
           );
 
           // Both AgencyManager and AgencyStaff can approve/reject
-          if (isDealerManager() || isDealerStaff()) {
+          if (isDealerStaff() || isDealerManager()) {
             items.push(
               {
                 type: 'divider'
@@ -745,13 +859,13 @@ const QuotationPage = () => {
               {
                 key: 'approve',
                 icon: <CheckCircleOutlined />,
-                label: 'Duyệt',
+                label: 'Khách hàng đồng ý',
                 onClick: () => handleApprove(record.id)
               },
               {
                 key: 'reject',
                 icon: <CloseCircleOutlined />,
-                label: 'Từ chối',
+                label: 'Khách hàng từ chối',
                 danger: true,
                 onClick: () => handleReject(record.id)
               }
@@ -908,6 +1022,7 @@ const QuotationPage = () => {
                     placeholder="Chọn khách hàng"
                     showSearch
                     optionFilterProp="children"
+                    onChange={handleCustomerChange}
                     filterOption={(input, option) =>
                       (option?.children?.toString().toLowerCase() ?? '').includes(input.toLowerCase())
                     }
@@ -915,6 +1030,11 @@ const QuotationPage = () => {
                     {customers.map(customer => (
                       <Option key={customer.id} value={customer.id}>
                         {customer.fullName} - {customer.phone}
+                        {customer.class && customer.class !== 'Thường' && (
+                          <Tag color="gold" style={{ marginLeft: 8 }}>
+                            {customer.class}
+                          </Tag>
+                        )}
                       </Option>
                     ))}
                   </Select>
@@ -936,8 +1056,13 @@ const QuotationPage = () => {
                     }
                   >
                     {vehicleData.map(vehicle => (
-                      <Option key={vehicle.id} value={vehicle.id}>
-                        {vehicle.variant_name} ({vehicle.model_name}) - {formatPrice(vehicle.price)}
+                      <Option 
+                        key={vehicle.id} 
+                        value={vehicle.id}
+                        disabled={vehicle.availableInstances === 0}
+                      >
+                        {vehicle.variant_name} - {vehicle.color} ({vehicle.model_name}) - {formatPrice(vehicle.price)}
+                        {vehicle.availableInstances === 0 && ' - Hết xe'}
                       </Option>
                     ))}
                   </Select>
@@ -987,26 +1112,56 @@ const QuotationPage = () => {
             <Form.Item name="discount_amount" hidden>
               <InputNumber />
             </Form.Item>
+            <Form.Item name="promotion_discount" hidden>
+              <InputNumber />
+            </Form.Item>
+            <Form.Item name="class_discount" hidden>
+              <InputNumber />
+            </Form.Item>
+            <Form.Item name="class_discount_percent" hidden>
+              <InputNumber />
+            </Form.Item>
 
-            {/* Display promotion info if applicable */}
+            {/* Display promotion and discount info if applicable */}
             {form.getFieldValue('discount_amount') > 0 && (
               <Card 
                 size="small" 
                 style={{ marginBottom: 16, backgroundColor: '#fff7e6', border: '1px solid #ffa940' }}
               >
-                <Row gutter={16} align="middle">
-                  <Col span={12}>
+                <Row gutter={[16, 8]}>
+                  <Col span={24}>
                     <Text strong>Giá gốc:</Text>
-                    <br />
-                    <Text style={{ fontSize: '16px' }}>
+                    <Text style={{ fontSize: '16px', marginLeft: 8 }}>
                       {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
                         .format(form.getFieldValue('original_price') || 0)}
                     </Text>
                   </Col>
-                  <Col span={12}>
-                    <Text strong style={{ color: '#ff4d4f' }}>Giảm giá:</Text>
-                    <br />
-                    <Text style={{ fontSize: '16px', color: '#ff4d4f', fontWeight: 'bold' }}>
+                  
+                  {form.getFieldValue('promotion_discount') > 0 && (
+                    <Col span={24}>
+                      <Text strong style={{ color: '#ff4d4f' }}>Khuyến mãi:</Text>
+                      <Text style={{ fontSize: '14px', color: '#ff4d4f', marginLeft: 8 }}>
+                        - {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+                          .format(form.getFieldValue('promotion_discount') || 0)}
+                      </Text>
+                    </Col>
+                  )}
+                  
+                  {form.getFieldValue('class_discount') > 0 && (
+                    <Col span={24}>
+                      <Text strong style={{ color: '#faad14' }}>
+                        Giảm giá khách hàng ({form.getFieldValue('class_discount_percent')}%):
+                      </Text>
+                      <Text style={{ fontSize: '14px', color: '#faad14', marginLeft: 8 }}>
+                        - {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
+                          .format(form.getFieldValue('class_discount') || 0)}
+                      </Text>
+                    </Col>
+                  )}
+                  
+                  <Col span={24} style={{ borderTop: '1px solid #d9d9d9', paddingTop: 8, marginTop: 8 }}>
+                    <Text strong>Tổng giảm giá:</Text>
+                    <Text style={{ fontSize: '16px', color: '#ff4d4f', fontWeight: 'bold', marginLeft: 8 }}>
                       - {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' })
                         .format(form.getFieldValue('discount_amount') || 0)}
                     </Text>

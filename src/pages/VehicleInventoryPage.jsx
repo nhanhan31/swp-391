@@ -119,11 +119,12 @@ const VehicleInventoryPage = () => {
     try {
       setLoading(true);
 
-      // Step 1: Create vehicle instance
+      // Step 1: Create vehicle instance with status = 0
       const instanceData = {
         vehicleId: values.vehicleId,
         vin: values.vin,
-        engineNumber: values.engineNumber
+        engineNumber: values.engineNumber,
+
       };
 
       const newInstance = await vehicleInstanceAPI.create(instanceData);
@@ -150,22 +151,18 @@ const VehicleInventoryPage = () => {
 
   // Calculate inventory by vehicle
   const inventoryByVehicle = vehicleList.map((vehicle, index) => {
-    // Count total instances in EVInventory (kho hãng)
-    const evInstances = evInventoryList.filter(evItem => 
-      evItem.vehicleInstance?.vehicleId === vehicle.id
-    );
-    const totalInstances = evInstances.length;
+    // Count TOTAL instances of this vehicle (from all VehicleInstances)
+    const allInstances = vehicleInstanceList.filter(inst => inst.vehicleId === vehicle.id);
+    const totalInstances = allInstances.length;
     
-    // Count allocated instances = those in AgencyInventory (đã phân bổ)
-    const allocatedInstances = agencyInventoryData.filter(item => {
-      // Check if this instance is in agency inventory
-      const instanceVehicleId = vehicleInstanceList.find(inst => inst.id === item.vehicleInstanceId)?.vehicleId;
-      return instanceVehicleId === vehicle.id;
-    });
+    // Count allocated instances (status != 0 and status != null means allocated to agency)
+    const allocatedInstances = allInstances.filter(inst => inst.status !== null && inst.status !== "0");
     const totalAllocated = allocatedInstances.length;
     
-    // Available = In EVInventory but NOT in AgencyInventory (chưa phân bổ)
-    const available = totalInstances - totalAllocated;
+    // Count available instances (status = 0 or null means still in EV warehouse)
+    const availableInstances = allInstances.filter(inst => inst.status === null || inst.status === "0");
+    const available = availableInstances.length;
+    
     const allocationRatio = totalInstances > 0 ? Math.round((totalAllocated / totalInstances) * 100) : 0;
     const status = available <= 5 ? 'low' : available <= 15 ? 'warning' : 'good';
 
@@ -181,7 +178,7 @@ const VehicleInventoryPage = () => {
       allocation_ratio: allocationRatio,
       status
     };
-  }).filter(item => item.total_quantity > 0); // Only show vehicles that have instances in EV Inventory
+  }).filter(item => item.total_quantity > 0); // Only show vehicles that have instances
 
   // Calculate inventory by agency
   const inventoryByAgency = agencyList.map(agency => {

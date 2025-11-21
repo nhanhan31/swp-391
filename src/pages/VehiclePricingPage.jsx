@@ -100,8 +100,8 @@ const VehiclePricingPage = () => {
 
   const totalPriceRecords = priceData.length;
   const activePrices = priceData.filter(p => dayjs().isBetween(dayjs(p.startDate), dayjs(p.endDate), null, '[]')).length;
-  const retailPrices = priceData.filter(p => p.priceType?.toLowerCase() === 'retail').length;
-  const wholesalePrices = priceData.filter(p => p.priceType?.toLowerCase() === 'wholesale').length;
+  const msrpPrices = priceData.filter(p => p.priceType?.toUpperCase() === 'MSRP').length;
+  const wholesalePrices = priceData.filter(p => p.priceType?.toUpperCase() === 'WHOLESALE').length;
 
   const handleCreate = () => {
     setModalMode('create');
@@ -115,7 +115,6 @@ const VehiclePricingPage = () => {
     setSelectedPrice(record);
     form.setFieldsValue({
       vehicleId: record.vehicleId,
-      agencyId: record.agencyId,
       priceType: record.priceType,
       priceAmount: record.priceAmount,
       date_range: [dayjs(record.startDate), dayjs(record.endDate)]
@@ -136,7 +135,7 @@ const VehiclePricingPage = () => {
 
       const priceData = {
         vehicleId: values.vehicleId,
-        agencyId: values.agencyId,
+        agencyId: 1,
         priceType: values.priceType,
         priceAmount: values.priceAmount,
         startDate: values.date_range[0].format('YYYY-MM-DDTHH:mm:ss.SSS[Z]'),
@@ -177,9 +176,9 @@ const VehiclePricingPage = () => {
   };
 
   const priceTypeTag = (type) => {
-    const typeStr = type?.toLowerCase();
-    return typeStr === 'retail' 
-      ? <Tag color="blue">Giá lẻ</Tag>
+    const typeStr = type?.toUpperCase();
+    return typeStr === 'MSRP' 
+      ? <Tag color="blue">Giá niêm yết (MSRP)</Tag>
       : <Tag color="green">Giá sỉ (Wholesale)</Tag>;
   };
 
@@ -194,23 +193,6 @@ const VehiclePricingPage = () => {
           <Text strong>{text}</Text>
           <br />
           <Tag color="cyan" style={{ fontSize: '11px' }}>{record.vehicle_color}</Tag>
-        </div>
-      )
-    },
-    {
-      title: 'Đại lý áp dụng',
-      dataIndex: 'agency_name',
-      key: 'agency_name',
-      width: 200,
-      render: (text, record) => (
-        <div>
-          <Text strong>{text}</Text>
-          {record.agency_location && (
-            <>
-              <br />
-              <Text type="secondary" style={{ fontSize: '12px' }}>{record.agency_location}</Text>
-            </>
-          )}
         </div>
       )
     },
@@ -295,9 +277,9 @@ const VehiclePricingPage = () => {
         <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <Title level={2}>
-              <DollarOutlined /> Quản lý giá bán sỉ (Wholesale Price)
+              <DollarOutlined /> Quản lý giá xe điện
             </Title>
-            <Text type="secondary">Quản lý bảng giá xe điện cho các đại lý</Text>
+            <Text type="secondary">Quản lý giá niêm yết (MSRP) và giá sỉ (Wholesale) cho các đại lý</Text>
           </div>
           <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
             Tạo bảng giá mới
@@ -328,8 +310,8 @@ const VehiclePricingPage = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Giá lẻ"
-              value={retailPrices}
+              title="Giá niêm yết (MSRP)"
+              value={msrpPrices}
               prefix={<CarOutlined />}
               valueStyle={{ color: '#1890ff' }}
             />
@@ -338,7 +320,7 @@ const VehiclePricingPage = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Giá sỉ"
+              title="Giá sỉ (Wholesale)"
               value={wholesalePrices}
               prefix={<ShopOutlined />}
               valueStyle={{ color: '#52c41a' }}
@@ -347,10 +329,23 @@ const VehiclePricingPage = () => {
         </Col>
       </Row>
 
-      <Card title="Danh sách bảng giá">
+      <Card title="Bảng giá niêm yết (MSRP)" style={{ marginBottom: '24px' }}>
         <Table
           columns={columns}
-          dataSource={priceData}
+          dataSource={priceData.filter(p => p.priceType?.toUpperCase() === 'MSRP')}
+          rowKey="id"
+          scroll={{ x: 1200 }}
+          pagination={{
+            pageSize: 10,
+            showTotal: (total) => `Tổng ${total} bảng giá`
+          }}
+        />
+      </Card>
+
+      <Card title="Bảng giá sỉ (Wholesale)">
+        <Table
+          columns={columns}
+          dataSource={priceData.filter(p => p.priceType?.toUpperCase() === 'WHOLESALE')}
           rowKey="id"
           scroll={{ x: 1200 }}
           pagination={{
@@ -377,15 +372,10 @@ const VehiclePricingPage = () => {
         {modalMode === 'view' && selectedPrice ? (
           <div style={{ padding: '16px 0' }}>
             <Row gutter={[16, 16]}>
-              <Col span={12}>
+              <Col span={24}>
                 <Text type="secondary">Phiên bản xe</Text>
                 <div><Text strong>{selectedPrice.vehicle_name}</Text></div>
                 <Tag color="cyan">{selectedPrice.vehicle_color}</Tag>
-              </Col>
-              <Col span={12}>
-                <Text type="secondary">Đại lý áp dụng</Text>
-                <div><Text strong>{selectedPrice.agency_name}</Text></div>
-                {selectedPrice.agency_location && <Text type="secondary">{selectedPrice.agency_location}</Text>}
               </Col>
               <Col span={12}>
                 <Text type="secondary">Loại giá</Text>
@@ -432,32 +422,12 @@ const VehiclePricingPage = () => {
             </Form.Item>
 
             <Form.Item
-              name="agencyId"
-              label="Đại lý áp dụng"
-              rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
-            >
-              <Select placeholder="Chọn đại lý" showSearch filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }>
-                {agencyList.map(agency => (
-                  <Select.Option 
-                    key={agency.id} 
-                    value={agency.id}
-                    label={`${agency.agencyName} - ${agency.location}`}
-                  >
-                    {agency.agencyName} - {agency.location}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-
-            <Form.Item
               name="priceType"
               label="Loại giá"
               rules={[{ required: true, message: 'Vui lòng chọn loại giá' }]}
             >
-              <Select placeholder="Chọn loại giá">
-                <Select.Option value="Retail">Giá lẻ</Select.Option>
+              <Select placeholder="Chọn loại giá" disabled={modalMode === 'edit'}>
+                <Select.Option value="MSRP">Giá niêm yết (MSRP)</Select.Option>
                 <Select.Option value="Wholesale">Giá sỉ (Wholesale)</Select.Option>
               </Select>
             </Form.Item>

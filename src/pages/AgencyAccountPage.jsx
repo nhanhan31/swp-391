@@ -151,7 +151,8 @@ const AgencyAccountPage = () => {
       full_name: record.full_name,
       email: record.email,
       phone: record.phone,
-      status: record.status
+      status: record.status,
+      agency_id: record.agency_id
     });
     setAvatarFile(null);
     setIsModalOpen(true);
@@ -182,7 +183,7 @@ const AgencyAccountPage = () => {
           formData.append('AvatarFile', avatarFile);
         }
 
-        await axios.post(
+        const userResponse = await axios.post(
           `${USER_API}/User`,
           formData,
           {
@@ -193,7 +194,20 @@ const AgencyAccountPage = () => {
           }
         );
 
-        message.success('Tạo tài khoản thành công');
+        // Assign user to agency
+        const newUserId = userResponse.data.id;
+        await axios.post(
+          `${AGENCY_API}/Agency/${values.agency_id}/assign-user`,
+          { userId: newUserId },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
+        );
+
+        message.success('Tạo tài khoản và phân bổ đại lý thành công');
       } else if (modalMode === 'edit') {
         const formData = new FormData();
         formData.append('FullName', values.full_name);
@@ -216,6 +230,35 @@ const AgencyAccountPage = () => {
             }
           }
         );
+
+        // Check if agency changed, then reassign
+        if (values.agency_id && values.agency_id !== selectedUser.agency_id) {
+          // Remove from old agency
+          if (selectedUser.agency_id) {
+            await axios.post(
+              `${AGENCY_API}/Agency/${selectedUser.agency_id}/remove-user`,
+              { userId: selectedUser.id },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                }
+              }
+            );
+          }
+
+          // Assign to new agency
+          await axios.post(
+            `${AGENCY_API}/Agency/${values.agency_id}/assign-user`,
+            { userId: selectedUser.id },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+              }
+            }
+          );
+        }
 
         message.success('Cập nhật tài khoản thành công');
       }
@@ -240,6 +283,63 @@ const AgencyAccountPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDelete = async (record) => {
+    Modal.confirm({
+      title: 'Xác nhận xóa tài khoản',
+      content: `Bạn có chắc chắn muốn xóa tài khoản "${record.full_name}" (@${record.username})?`,
+      okText: 'Xóa',
+      cancelText: 'Hủy',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          
+          // Remove user from agency first
+          if (record.agency_id) {
+            await axios.post(
+              `${AGENCY_API}/Agency/${record.agency_id}/remove-user`,
+              { userId: record.id },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                }
+              }
+            );
+          }
+
+          // Then delete the user
+          await axios.delete(
+            `${USER_API}/User/${record.id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+              }
+            }
+          );
+
+          message.success('Đã xóa tài khoản thành công');
+          
+          // Refresh user list
+          const response = await axios.get(`${USER_API}/User`, {
+            headers: {
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          });
+          const agencyUsers = (response.data || []).filter(user => 
+            user.role?.roleName === 'AgencyManager' || user.role?.roleName === 'AgencyStaff'
+          );
+          setUserList(agencyUsers);
+        } catch (error) {
+          console.error('Error deleting user:', error);
+          message.error('Không thể xóa tài khoản');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   };
 
   const handleChangePassword = async (userId) => {
@@ -423,6 +523,16 @@ const AgencyAccountPage = () => {
             icon: <LockOutlined />,
             label: 'Đổi mật khẩu',
             onClick: () => handleChangePassword(record.id)
+          },
+          {
+            type: 'divider'
+          },
+          {
+            key: 'delete',
+            icon: <CloseCircleOutlined />,
+            label: 'Xóa tài khoản',
+            danger: true,
+            onClick: () => handleDelete(record)
           }
         ];
 
@@ -600,6 +710,24 @@ const AgencyAccountPage = () => {
                     <Select.Option value={5}>Agency Staff</Select.Option>
                   </Select>
                 </Form.Item>
+
+                <Form.Item
+                  name="agency_id"
+                  label="Đại lý"
+                  rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
+                >
+                  <Select
+                    placeholder="Chọn đại lý"
+                    showSearch
+                    optionFilterProp="children"
+                  >
+                    {agencies.map(agency => (
+                      <Select.Option key={agency.id} value={agency.id}>
+                        {agency.agencyName} - {agency.location}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
               </>
             )}
 
@@ -610,6 +738,26 @@ const AgencyAccountPage = () => {
             >
               <Input prefix={<UserOutlined />} placeholder="Nguyễn Văn A" />
             </Form.Item>
+
+            {modalMode === 'edit' && (
+              <Form.Item
+                name="agency_id"
+                label="Đại lý"
+                rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
+              >
+                <Select
+                  placeholder="Chọn đại lý"
+                  showSearch
+                  optionFilterProp="children"
+                >
+                  {agencies.map(agency => (
+                    <Select.Option key={agency.id} value={agency.id}>
+                      {agency.agencyName} - {agency.location}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
 
             <Row gutter={16}>
               <Col span={12}>

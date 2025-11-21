@@ -706,11 +706,15 @@ Tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền.
       )
     },
     {
-      title: 'hinh anh',
+      title: 'Hình ảnh',
       dataIndex: 'contractImageUrl',
       key: 'contractImageUrl',
       width: 120,
-      render: (contractImageUrl) => <Image src={contractImageUrl} alt="Contract" style={{ maxWidth: '100%', maxHeight: '80px' }} />
+      render: (contractImageUrl) => {
+        return contractImageUrl 
+          ? <Image src={contractImageUrl} alt="Contract" style={{ maxWidth: '100%', maxHeight: '80px' }} /> 
+          : <Text type="secondary">Chưa ký</Text>;
+      }
     },
     {
       title: 'Ngày bắt đầu',

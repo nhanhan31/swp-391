@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -16,7 +16,10 @@ import {
   Row,
   Col,
   message,
-  Popconfirm
+  Popconfirm,
+  Spin,
+  Upload,
+  Dropdown
 } from 'antd';
 import {
   TeamOutlined,
@@ -28,151 +31,317 @@ import {
   UserOutlined,
   LockOutlined,
   MailOutlined,
-  PhoneOutlined
+  PhoneOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  UploadOutlined,
+  MoreOutlined
 } from '@ant-design/icons';
-import { users as mockUsers, roles, agencies } from '../data/mockData';
+import dayjs from 'dayjs';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+
+const USER_API = 'https://user.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
+const { Password } = Input;
 
 const UsersPage = () => {
-  const [userList, setUserList] = useState(mockUsers);
+  const { currentUser } = useAuth();
+  const [userList, setUserList] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create', 'edit', 'view'
   const [selectedUser, setSelectedUser] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
   const [form] = Form.useForm();
   const [searchText, setSearchText] = useState('');
   const [filterRole, setFilterRole] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  // Filter users
+  // Fetch roles
+  useEffect(() => {
+    const fetchRoles = async () => {
+      try {
+        const response = await axios.get(`${USER_API}/Role`, {
+          headers: {
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+        setRoles(response.data || []);
+      } catch (error) {
+        console.error('Error fetching roles:', error);
+        message.error('Không thể tải danh sách vai trò');
+      }
+    };
+
+    fetchRoles();
+  }, []);
+
+  // Fetch all users
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${USER_API}/User`, {
+        headers: {
+          'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+        }
+      });
+      
+      setUserList(response.data || []);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      message.error('Không thể tải danh sách người dùng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Transform and filter users
+  const userData = useMemo(() => {
+    return userList.map(user => ({
+      id: user.id,
+      username: user.userName,
+      full_name: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      avatar_url: user.avartarUrl,
+      status: user.status,
+      role_name: user.role?.roleName,
+      role_id: user.role?.id,
+      created_at: user.created_At,
+      updated_at: user.updated_At
+    })).sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
+  }, [userList]);
+
   const filteredUsers = useMemo(() => {
-    return userList.filter(user => {
+    return userData.filter(user => {
       const matchSearch = 
-        user.full_name.toLowerCase().includes(searchText.toLowerCase()) ||
-        user.username.toLowerCase().includes(searchText.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchText.toLowerCase());
+        user.full_name?.toLowerCase().includes(searchText.toLowerCase()) ||
+        user.username?.toLowerCase().includes(searchText.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchText.toLowerCase());
       const matchRole = filterRole === 'all' || user.role_id === parseInt(filterRole);
       const matchStatus = filterStatus === 'all' || user.status === filterStatus;
       return matchSearch && matchRole && matchStatus;
     });
-  }, [userList, searchText, filterRole, filterStatus]);
+  }, [userData, searchText, filterRole, filterStatus]);
 
   // Statistics
   const statistics = useMemo(() => {
-    const activeUsers = userList.filter(u => u.status === 'active').length;
-    const inactiveUsers = userList.filter(u => u.status === 'inactive').length;
-    const byRole = {};
-    roles.forEach(role => {
-      byRole[role.role_name] = userList.filter(u => u.role_id === role.id).length;
-    });
+    const activeUsers = userData.filter(u => u.status === 'Active').length;
+    const inactiveUsers = userData.filter(u => u.status === 'Inactive').length;
+    const adminUsers = userData.filter(u => u.role_name === 'Admin').length;
+    const evmStaffUsers = userData.filter(u => u.role_name === 'EVMStaff').length;
 
     return {
-      total: userList.length,
+      total: userData.length,
       activeUsers,
       inactiveUsers,
-      byRole
+      adminUsers,
+      evmStaffUsers
     };
-  }, [userList]);
+  }, [userData]);
 
-  const getRoleName = (roleId) => {
-    return roles.find(r => r.id === roleId)?.role_name || 'Unknown';
-  };
-
-  const getAgencyName = (agencyId) => {
-    if (!agencyId) return 'Không thuộc đại lý';
-    return agencies.find(a => a.id === agencyId)?.agency_name || 'Unknown';
-  };
-
-  const roleTag = (roleId) => {
-    const colors = {
-      1: 'red',
-      2: 'blue',
-      3: 'green',
-      4: 'orange'
+  const roleTag = (roleName) => {
+    const roleColors = {
+      'Admin': 'red',
+      'EVMStaff': 'blue',
+      'AgencyManager': 'green',
+      'AgencyStaff': 'cyan'
     };
-    return <Tag color={colors[roleId]}>{getRoleName(roleId)}</Tag>;
+    return <Tag color={roleColors[roleName] || 'default'}>{roleName}</Tag>;
   };
 
   const statusMeta = (status) => {
-    const meta = {
-      active: { color: 'success', text: 'Hoạt động' },
-      inactive: { color: 'default', text: 'Không hoạt động' }
-    };
-    return meta[status] || meta.active;
+    return status === 'Active'
+      ? { color: 'green', text: 'Hoạt động', icon: <CheckCircleOutlined /> }
+      : { color: 'red', text: 'Ngừng hoạt động', icon: <CloseCircleOutlined /> };
   };
 
   const handleOpenModal = (mode, record = null) => {
     setModalMode(mode);
     setSelectedUser(record);
     setIsModalVisible(true);
+    setAvatarFile(null);
 
     if (mode === 'edit' && record) {
       form.setFieldsValue({
-        username: record.username,
         full_name: record.full_name,
         email: record.email,
         phone: record.phone,
-        role_id: record.role_id,
-        agency_id: record.agency_id,
         status: record.status
       });
     } else if (mode === 'create') {
       form.resetFields();
-      form.setFieldsValue({ status: 'active' });
     }
   };
 
   const handleCloseModal = () => {
     setIsModalVisible(false);
     setSelectedUser(null);
+    setAvatarFile(null);
     form.resetFields();
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then(values => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+
       if (modalMode === 'create') {
-        const newUser = {
-          id: userList.length + 1,
-          ...values,
-          password_hash: 'hashedpassword123',
-          avatar_url: '/images/default-avatar.jpg',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          created_by: 1
-        };
-        setUserList([...userList, newUser]);
-        message.success('Thêm người dùng mới thành công');
-      } else if (modalMode === 'edit') {
-        const updatedList = userList.map(user => 
-          user.id === selectedUser.id 
-            ? {
-                ...user,
-                ...values,
-                updated_at: new Date().toISOString()
-              }
-            : user
+        const formData = new FormData();
+        formData.append('UserName', values.username);
+        formData.append('Password', values.password);
+        formData.append('FullName', values.full_name);
+        formData.append('Email', values.email);
+        formData.append('RoleId', values.role_id);
+        formData.append('Phone', values.phone);
+        formData.append('CreateBy', currentUser?.id || 1);
+        
+        if (avatarFile) {
+          formData.append('AvatarFile', avatarFile);
+        }
+
+        await axios.post(
+          `${USER_API}/User`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
         );
-        setUserList(updatedList);
+
+        message.success('Tạo người dùng mới thành công');
+      } else if (modalMode === 'edit') {
+        const formData = new FormData();
+        formData.append('FullName', values.full_name);
+        formData.append('Email', values.email);
+        formData.append('Phone', values.phone);
+        formData.append('Status', values.status);
+        formData.append('RoleId', selectedUser.role_id);
+        
+        if (avatarFile) {
+          formData.append('AvatarFile', avatarFile);
+        }
+
+        await axios.put(
+          `${USER_API}/User/${selectedUser.id}`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }
+        );
+
         message.success('Cập nhật người dùng thành công');
       }
-      
+        
+      await fetchUsers();
       handleCloseModal();
+    } catch (error) {
+      console.error('Error submitting user:', error);
+      message.error('Không thể lưu thông tin người dùng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (record) => {
+    Modal.confirm({
+      title: 'Xác nhận xóa người dùng',
+      content: `Bạn có chắc chắn muốn xóa người dùng "${record.full_name}" (@${record.username})?`,
+      okText: 'Xóa',
+      cancelText: 'Hủy',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          
+          await axios.delete(
+            `${USER_API}/User/${record.id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+              }
+            }
+          );
+
+          message.success('Đã xóa người dùng thành công');
+          await fetchUsers();
+        } catch (error) {
+          console.error('Error deleting user:', error);
+          message.error('Không thể xóa người dùng');
+        } finally {
+          setLoading(false);
+        }
+      }
     });
   };
 
-  const handleDelete = (userId) => {
-    setUserList(userList.filter(user => user.id !== userId));
-    message.success('Xóa người dùng thành công');
-  };
-
-  const handleResetPassword = (user) => {
+  const handleChangePassword = async (userId) => {
     Modal.confirm({
-      title: 'Xác nhận đặt lại mật khẩu',
-      content: `Bạn có chắc chắn muốn đặt lại mật khẩu cho tài khoản "${user.username}"?`,
-      okText: 'Đặt lại',
+      title: 'Đổi mật khẩu',
+      content: (
+        <Form
+          id="change-password-form"
+          layout="vertical"
+          onFinish={async (values) => {
+            try {
+              await axios.post(
+                `${USER_API}/User/change-password/${userId}`,
+                {
+                  currentPassword: values.currentPassword,
+                  newPassword: values.newPassword
+                },
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                  }
+                }
+              );
+              message.success('Đổi mật khẩu thành công');
+              Modal.destroyAll();
+            } catch (error) {
+              console.error('Error changing password:', error);
+              message.error('Không thể đổi mật khẩu');
+            }
+          }}
+        >
+          <Form.Item
+            name="currentPassword"
+            label="Mật khẩu hiện tại"
+            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại' }]}
+          >
+            <Password />
+          </Form.Item>
+          <Form.Item
+            name="newPassword"
+            label="Mật khẩu mới"
+            rules={[
+              { required: true, message: 'Vui lòng nhập mật khẩu mới' },
+              { min: 6, message: 'Mật khẩu phải có ít nhất 6 ký tự' }
+            ]}
+          >
+            <Password />
+          </Form.Item>
+        </Form>
+      ),
+      okText: 'Đổi mật khẩu',
       cancelText: 'Hủy',
       onOk: () => {
-        message.success('Đã đặt lại mật khẩu. Mật khẩu mới đã được gửi qua email.');
+        document.getElementById('change-password-form').dispatchEvent(
+          new Event('submit', { cancelable: true, bubbles: true })
+        );
       }
     });
   };
@@ -225,146 +394,140 @@ const UsersPage = () => {
     {
       title: 'Vai trò',
       key: 'role',
-      width: 120,
-      render: (_, record) => roleTag(record.role_id),
-      filters: roles.map(role => ({ text: role.role_name, value: role.id })),
+      width: 150,
+      render: (_, record) => roleTag(record.role_name),
+      filters: roles.map(role => ({ text: role.roleName, value: role.id })),
       onFilter: (value, record) => record.role_id === value
-    },
-    {
-      title: 'Đại lý',
-      key: 'agency',
-      width: 180,
-      render: (_, record) => {
-        if (!record.agency_id) {
-          return <Text type="secondary">-</Text>;
-        }
-        const agency = agencies.find(a => a.id === record.agency_id);
-        return <Text>{agency?.agency_name}</Text>;
-      }
     },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
+      width: 140,
       render: (status) => {
         const meta = statusMeta(status);
-        return <Tag color={meta.color}>{meta.text}</Tag>;
+        return <Tag color={meta.color} icon={meta.icon}>{meta.text}</Tag>;
       },
       filters: [
-        { text: 'Hoạt động', value: 'active' },
-        { text: 'Không hoạt động', value: 'inactive' }
+        { text: 'Hoạt động', value: 'Active' },
+        { text: 'Ngừng hoạt động', value: 'Inactive' }
       ],
       onFilter: (value, record) => record.status === value
     },
     {
+      title: 'Ngày tạo',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 120,
+      render: (date) => dayjs(date).format('DD/MM/YYYY')
+    },
+    {
       title: 'Thao tác',
       key: 'actions',
-      width: 250,
+      width: 80,
+      align: 'center',
       fixed: 'right',
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => handleOpenModal('view', record)}
-          >
-            Xem
-          </Button>
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => handleOpenModal('edit', record)}
-          >
-            Sửa
-          </Button>
-          <Button
-            type="link"
-            icon={<LockOutlined />}
-            onClick={() => handleResetPassword(record)}
-          >
-            Đặt lại MK
-          </Button>
-          <Popconfirm
-            title="Xác nhận xóa người dùng?"
-            description="Bạn có chắc chắn muốn xóa người dùng này?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="Xóa"
-            cancelText="Hủy"
-          >
-            <Button
-              type="link"
-              danger
-              icon={<DeleteOutlined />}
-              disabled={record.id === 1}
-            >
-              Xóa
-            </Button>
-          </Popconfirm>
-        </Space>
-      )
+      render: (_, record) => {
+        const items = [
+          {
+            key: 'view',
+            icon: <EyeOutlined />,
+            label: 'Xem chi tiết',
+            onClick: () => handleOpenModal('view', record)
+          },
+          {
+            key: 'edit',
+            icon: <EditOutlined />,
+            label: 'Chỉnh sửa',
+            onClick: () => handleOpenModal('edit', record)
+          },
+          {
+            key: 'password',
+            icon: <LockOutlined />,
+            label: 'Đổi mật khẩu',
+            onClick: () => handleChangePassword(record.id)
+          },
+          {
+            type: 'divider'
+          },
+          {
+            key: 'delete',
+            icon: <CloseCircleOutlined />,
+            label: 'Xóa người dùng',
+            danger: true,
+            onClick: () => handleDelete(record)
+          }
+        ];
+
+        return (
+          <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+            <Button type="text" icon={<MoreOutlined />} />
+          </Dropdown>
+        );
+      }
     }
   ];
 
   return (
-    <div className="users-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <TeamOutlined /> Quản lý người dùng
-          </Title>
-          <Text type="secondary">Quản lý tài khoản và phân quyền người dùng</Text>
+    <Spin spinning={loading}>
+      <div className="users-page">
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <TeamOutlined /> Quản lý người dùng
+            </Title>
+            <Text type="secondary">Quản lý tất cả tài khoản người dùng trên hệ thống</Text>
+          </div>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleOpenModal('create')}
+            size="large"
+          >
+            Thêm người dùng
+          </Button>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => handleOpenModal('create')}
-          size="large"
-        >
-          Thêm người dùng
-        </Button>
-      </div>
 
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Tổng người dùng"
-              value={statistics.total}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Đang hoạt động"
-              value={statistics.activeUsers}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Admin"
-              value={statistics.byRole['Admin'] || 0}
-              valueStyle={{ color: '#f5222d' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="EVM Staff"
-              value={statistics.byRole['EVM Staff'] || 0}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-      </Row>
+        <Row gutter={16} style={{ marginBottom: '24px' }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Tổng người dùng"
+                value={statistics.total}
+                prefix={<TeamOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Đang hoạt động"
+                value={statistics.activeUsers}
+                prefix={<CheckCircleOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Admin"
+                value={statistics.adminUsers}
+                valueStyle={{ color: '#f5222d' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="EVM Staff"
+                value={statistics.evmStaffUsers}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
       <Card>
         <Space style={{ marginBottom: '16px', width: '100%', justifyContent: 'space-between' }}>
@@ -386,7 +549,7 @@ const UsersPage = () => {
               <Select.Option value="all">Tất cả vai trò</Select.Option>
               {roles.map(role => (
                 <Select.Option key={role.id} value={role.id.toString()}>
-                  {role.role_name}
+                  {role.roleName}
                 </Select.Option>
               ))}
             </Select>
@@ -411,7 +574,7 @@ const UsersPage = () => {
             showSizeChanger: true,
             showTotal: (total) => `Tổng ${total} người dùng`
           }}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1200 }}
         />
       </Card>
 
@@ -438,65 +601,84 @@ const UsersPage = () => {
         width={700}
       >
         {modalMode === 'view' && selectedUser ? (
-          <Descriptions bordered column={1}>
-            <Descriptions.Item label="Tên đăng nhập">
-              {selectedUser.username}
-            </Descriptions.Item>
-            <Descriptions.Item label="Họ và tên">
-              {selectedUser.full_name}
-            </Descriptions.Item>
-            <Descriptions.Item label="Email">
-              {selectedUser.email}
-            </Descriptions.Item>
-            <Descriptions.Item label="Số điện thoại">
-              {selectedUser.phone}
-            </Descriptions.Item>
-            <Descriptions.Item label="Vai trò">
-              {roleTag(selectedUser.role_id)}
-            </Descriptions.Item>
-            <Descriptions.Item label="Đại lý">
-              {getAgencyName(selectedUser.agency_id)}
-            </Descriptions.Item>
-            <Descriptions.Item label="Trạng thái">
-              <Tag color={statusMeta(selectedUser.status).color}>
-                {statusMeta(selectedUser.status).text}
-              </Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="Ngày tạo">
-              {new Date(selectedUser.created_at).toLocaleString('vi-VN')}
-            </Descriptions.Item>
-          </Descriptions>
+          <div style={{ padding: '16px 0' }}>
+            <Row gutter={[16, 16]}>
+              <Col span={24} style={{ textAlign: 'center', marginBottom: '16px' }}>
+                <Avatar size={80} icon={<UserOutlined />} src={selectedUser.avatar_url} />
+                <div style={{ marginTop: '12px' }}>
+                  <Title level={4}>{selectedUser.full_name}</Title>
+                  <Text type="secondary">@{selectedUser.username}</Text>
+                </div>
+              </Col>
+              <Col span={24}>
+                <Descriptions bordered column={1}>
+                  <Descriptions.Item label="Vai trò">
+                    {roleTag(selectedUser.role_name)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Email">
+                    <MailOutlined style={{ marginRight: '8px' }} />
+                    {selectedUser.email}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Số điện thoại">
+                    <PhoneOutlined style={{ marginRight: '8px' }} />
+                    {selectedUser.phone}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Trạng thái">
+                    {(() => {
+                      const meta = statusMeta(selectedUser.status);
+                      return <Tag color={meta.color} icon={meta.icon}>{meta.text}</Tag>;
+                    })()}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Ngày tạo">
+                    {dayjs(selectedUser.created_at).format('DD/MM/YYYY HH:mm')}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Cập nhật lần cuối">
+                    {dayjs(selectedUser.updated_at).format('DD/MM/YYYY HH:mm')}
+                  </Descriptions.Item>
+                </Descriptions>
+              </Col>
+            </Row>
+          </div>
         ) : (
           <Form form={form} layout="vertical">
-            <Form.Item
-              name="username"
-              label="Tên đăng nhập"
-              rules={[
-                { required: true, message: 'Vui lòng nhập tên đăng nhập' },
-                { pattern: /^[a-zA-Z0-9_]+$/, message: 'Chỉ chứa chữ, số và dấu gạch dưới' }
-              ]}
-            >
-              <Input 
-                prefix={<UserOutlined />} 
-                placeholder="Nhập tên đăng nhập"
-                disabled={modalMode === 'edit'}
-              />
-            </Form.Item>
-
             {modalMode === 'create' && (
-              <Form.Item
-                name="password"
-                label="Mật khẩu"
-                rules={[
-                  { required: true, message: 'Vui lòng nhập mật khẩu' },
-                  { min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }
-                ]}
-              >
-                <Input.Password 
-                  prefix={<LockOutlined />} 
-                  placeholder="Nhập mật khẩu"
-                />
-              </Form.Item>
+              <>
+                <Form.Item
+                  name="username"
+                  label="Tên đăng nhập"
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập tên đăng nhập' },
+                    { pattern: /^[a-z0-9_]+$/, message: 'Chỉ chấp nhận chữ thường, số và _' }
+                  ]}
+                >
+                  <Input prefix={<UserOutlined />} placeholder="VD: admin_system" />
+                </Form.Item>
+
+                <Form.Item
+                  name="password"
+                  label="Mật khẩu"
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập mật khẩu' },
+                    { min: 6, message: 'Mật khẩu phải có ít nhất 6 ký tự' }
+                  ]}
+                >
+                  <Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu" />
+                </Form.Item>
+
+                <Form.Item
+                  name="role_id"
+                  label="Vai trò"
+                  rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
+                >
+                  <Select placeholder="Chọn vai trò">
+                    {roles.map(role => (
+                      <Select.Option key={role.id} value={role.id}>
+                        {role.roleName}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </>
             )}
 
             <Form.Item
@@ -504,82 +686,80 @@ const UsersPage = () => {
               label="Họ và tên"
               rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}
             >
-              <Input placeholder="Nhập họ và tên" />
+              <Input prefix={<UserOutlined />} placeholder="Nguyễn Văn A" />
             </Form.Item>
 
-            <Form.Item
-              name="email"
-              label="Email"
-              rules={[
-                { required: true, message: 'Vui lòng nhập email' },
-                { type: 'email', message: 'Email không hợp lệ' }
-              ]}
-            >
-              <Input prefix={<MailOutlined />} placeholder="Nhập email" />
-            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="email"
+                  label="Email"
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập email' },
+                    { type: 'email', message: 'Email không hợp lệ' }
+                  ]}
+                >
+                  <Input prefix={<MailOutlined />} placeholder="user@vinfast.vn" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="phone"
+                  label="Số điện thoại"
+                  rules={[
+                    { required: true, message: 'Vui lòng nhập số điện thoại' },
+                    { pattern: /^[0-9]{10}$/, message: 'Số điện thoại phải có 10 chữ số' }
+                  ]}
+                >
+                  <Input prefix={<PhoneOutlined />} placeholder="0901234567" />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Form.Item
-              name="phone"
-              label="Số điện thoại"
-              rules={[
-                { required: true, message: 'Vui lòng nhập số điện thoại' },
-                { pattern: /^[0-9]{10}$/, message: 'Số điện thoại không hợp lệ' }
-              ]}
+              name="avatarFile"
+              label="Ảnh đại diện"
             >
-              <Input prefix={<PhoneOutlined />} placeholder="Nhập số điện thoại" />
+              <Upload
+                beforeUpload={(file) => {
+                  const isImage = file.type.startsWith('image/');
+                  if (!isImage) {
+                    message.error('Chỉ được tải lên file hình ảnh!');
+                  }
+                  const isLt5M = file.size / 1024 / 1024 < 5;
+                  if (!isLt5M) {
+                    message.error('Hình ảnh phải nhỏ hơn 5MB!');
+                  }
+                  if (isImage && isLt5M) {
+                    setAvatarFile(file);
+                  }
+                  return false;
+                }}
+                maxCount={1}
+                listType="picture"
+              >
+                <Button icon={<UploadOutlined />}>Chọn ảnh đại diện</Button>
+              </Upload>
             </Form.Item>
 
-            <Form.Item
-              name="role_id"
-              label="Vai trò"
-              rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
-            >
-              <Select placeholder="Chọn vai trò">
-                {roles.map(role => (
-                  <Select.Option key={role.id} value={role.id}>
-                    {role.role_name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-
-            <Form.Item
-              noStyle
-              shouldUpdate={(prevValues, currentValues) => prevValues.role_id !== currentValues.role_id}
-            >
-              {({ getFieldValue }) =>
-                [3, 4].includes(getFieldValue('role_id')) ? (
-                  <Form.Item
-                    name="agency_id"
-                    label="Đại lý"
-                    rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
-                  >
-                    <Select placeholder="Chọn đại lý">
-                      {agencies.map(agency => (
-                        <Select.Option key={agency.id} value={agency.id}>
-                          {agency.agency_name}
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                ) : null
-              }
-            </Form.Item>
-
-            <Form.Item
-              name="status"
-              label="Trạng thái"
-              rules={[{ required: true, message: 'Vui lòng chọn trạng thái' }]}
-            >
-              <Select>
-                <Select.Option value="active">Hoạt động</Select.Option>
-                <Select.Option value="inactive">Không hoạt động</Select.Option>
-              </Select>
-            </Form.Item>
+            {modalMode === 'edit' && (
+              <Form.Item
+                name="status"
+                label="Trạng thái"
+                initialValue="Active"
+                rules={[{ required: true, message: 'Vui lòng chọn trạng thái' }]}
+              >
+                <Select>
+                  <Select.Option value="Active">Hoạt động</Select.Option>
+                  <Select.Option value="Inactive">Ngừng hoạt động</Select.Option>
+                </Select>
+              </Form.Item>
+            )}
           </Form>
         )}
       </Modal>
-    </div>
+      </div>
+    </Spin>
   );
 };
 
