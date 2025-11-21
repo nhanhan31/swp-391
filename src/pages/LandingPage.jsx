@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Layout,
   Row,
@@ -49,6 +50,7 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 const LandingPage = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
   // Data States
@@ -552,7 +554,7 @@ const LandingPage = () => {
             <Title level={3} style={{ margin: 0, color: '#fff' }}>EV Agency</Title>
           </div>
           <div className="header-actions">
-            <Button type="primary" size="large" onClick={() => window.location.href = '/login'}>
+            <Button type="primary" size="large" onClick={() => navigate('/login')}>
               Đăng nhập
             </Button>
           </div>
