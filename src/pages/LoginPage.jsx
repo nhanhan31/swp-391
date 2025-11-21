@@ -121,7 +121,7 @@ const LoginPage = () => {
 
             {/* <Divider>Tài khoản demo</Divider> */}
             
-            <div className="demo-accounts">
+            {/* <div className="demo-accounts">
               <Space direction="vertical" style={{ width: '100%' }} size="small">
                 {demoAccounts.map((account, index) => (
                   <Card
@@ -148,7 +148,7 @@ const LoginPage = () => {
                   </Card>
                 ))}
               </Space>
-            </div>
+            </div> */}
           </Card>
         </Col>
       </Row>
