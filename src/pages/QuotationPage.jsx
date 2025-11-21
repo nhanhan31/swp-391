@@ -118,7 +118,7 @@ const QuotationPage = () => {
 
         console.log('Raw quotations data:', quotationsData);
         console.log('Is array:', Array.isArray(quotationsData));
-        
+
         // Ensure quotationsData is always an array
         if (!Array.isArray(quotationsData)) {
           console.warn('quotationsData is not an array, converting to empty array');
@@ -205,10 +205,10 @@ const QuotationPage = () => {
         const allInstancesData = await vehicleInstanceAPI.getAll();
         // Filter: chỉ lấy instance thuộc agency và status khác Reserved
         const filteredInstances = (isDealerManager() || isDealerStaff())
-          ? (allInstancesData || []).filter(inst => 
-              availableInstanceIds.includes(inst.id) && 
-              inst.status?.toLowerCase() !== 'reserved'
-            )
+          ? (allInstancesData || []).filter(inst =>
+            availableInstanceIds.includes(inst.id) &&
+            inst.status?.toLowerCase() !== 'reserved'
+          )
           : (allInstancesData || []).filter(inst => inst.status?.toLowerCase() !== 'reserved');
 
         setVehicleInstances(filteredInstances);
@@ -224,10 +224,10 @@ const QuotationPage = () => {
         const filteredVehicles = (vehiclesData || []).filter(v => uniqueVehicleIds.includes(v.id));
 
         // Filter promotions: national (agencyId null/0) + current agency promotions
-        const filteredPromotions = agencyId 
-          ? (allPromotionsData || []).filter(p => 
-              !p.agencyId || p.agencyId === 0 || p.agencyId === agencyId
-            )
+        const filteredPromotions = agencyId
+          ? (allPromotionsData || []).filter(p =>
+            !p.agencyId || p.agencyId === 0 || p.agencyId === agencyId
+          )
           : (allPromotionsData || []).filter(p => !p.agencyId || p.agencyId === 0);
 
         setVehicles(filteredVehicles);
@@ -242,20 +242,29 @@ const QuotationPage = () => {
   }, [getAgencyId, isDealerManager, isDealerStaff]);
 
   // Fetch customers
+  // Fetch customers
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const agencyId = getAgencyId();
+        const agencyId = getAgencyId(); // Lấy Agency ID của user đang đăng nhập
         const customersData = await customerAPI.getAll();
-        
-        // Filter customers by current agency
-        const filteredCustomers = agencyId 
-          ? (customersData || []).filter(c => c.agencyId === agencyId)
-          : (customersData || []);
-        
+
+        console.log("All Customers:", customersData);
+        console.log("Current Agency ID:", agencyId);
+
+        // Lọc khách hàng:
+        // 1. Kiểm tra xem có agencyId không
+        // 2. So sánh c.agencyId với Number(agencyId) để tránh lỗi so sánh chuỗi "1" với số 1
+        const filteredCustomers = agencyId
+          ? (customersData || []).filter(c => c.agencyId === Number(agencyId))
+          : [];
+
+        console.log("Filtered Customers:", filteredCustomers);
         setCustomers(filteredCustomers);
       } catch (error) {
         console.error('Error fetching customers:', error);
+        // Nếu lỗi thì set mảng rỗng để không bị crash
+        setCustomers([]);
       }
     };
 
@@ -310,7 +319,7 @@ const QuotationPage = () => {
   const getStatusInfo = (status) => {
     const statusMap = {
       pending: { color: 'warning', text: 'pending', icon: '' },
-      
+
       accepted: { color: 'success', text: 'Accepted', icon: '' },
       rejected: { color: 'error', text: 'rejected', icon: '' },
       expired: { color: 'default', text: 'Hết hạn', icon: '' },
@@ -471,11 +480,11 @@ const QuotationPage = () => {
       onOk: async () => {
         try {
           console.log('🚀 Starting convert to order for quotation:', quotation.id);
-          
+
           // 0. Get fresh quotation data from API to ensure we have vehicle info
           const freshQuotation = await quotationAPI.getById(quotation.id);
           console.log('📄 Fresh quotation data:', freshQuotation);
-          
+
           // 1. Create Order
           const orderPayload = {
             customerId: quotation.customer_id,
@@ -497,7 +506,7 @@ const QuotationPage = () => {
             try {
               const vehicleInstanceId = freshQuotation.vehicle.id;
               console.log('🔄 Updating VehicleInstance:', vehicleInstanceId);
-              
+
               await vehicleInstanceAPI.update(vehicleInstanceId, {
                 VehicleId: freshQuotation.vehicle.vehicleId,
                 Vin: freshQuotation.vehicle.vin,
@@ -567,9 +576,9 @@ const QuotationPage = () => {
   const calculateFinalPrice = (vehicleId, vehicle, customerId) => {
     const now = dayjs();
     const agencyId = getAgencyId();
-    
+
     // 1. Tìm TẤT CẢ khuyến mãi đang áp dụng cho xe này
-    const activePromotions = promotions.filter(promo => 
+    const activePromotions = promotions.filter(promo =>
       promo.vehicleId === vehicleId &&
       dayjs(promo.startDate).isBefore(now) &&
       dayjs(promo.endDate).isAfter(now)
@@ -583,11 +592,11 @@ const QuotationPage = () => {
     activePromotions.forEach(promo => {
       const discount = promo.discountAmount;
       totalPromotionDiscount += discount;
-      
-      const scope = (!promo.agencyId || promo.agencyId === 0) 
-        ? 'Toàn quốc' 
+
+      const scope = (!promo.agencyId || promo.agencyId === 0)
+        ? 'Toàn quốc'
         : 'Đại lý';
-      
+
       promotionDetails.push({
         name: promo.promoName,
         scope,
@@ -612,7 +621,7 @@ const QuotationPage = () => {
           classDiscountPercent = 5;
         }
         // Thường: 0%
-        
+
         if (classDiscountPercent > 0) {
           classDiscount = Math.round(basePrice * classDiscountPercent / 100);
         }
@@ -624,17 +633,17 @@ const QuotationPage = () => {
 
     // Display messages
     const messages = [];
-    
+
     // Hiển thị từng khuyến mãi
     promotionDetails.forEach(promo => {
       messages.push(`KM ${promo.scope}: ${promo.name} -${new Intl.NumberFormat('vi-VN').format(promo.discount)}đ`);
     });
-    
+
     // Hiển thị giảm giá class
     if (classDiscountPercent > 0) {
       messages.push(`Giảm giá ${classDiscountPercent}% (${customer.class}): -${new Intl.NumberFormat('vi-VN').format(classDiscount)}đ`);
     }
-    
+
     if (messages.length > 0) {
       message.success(messages.join(' | '), 5);
     }
@@ -1063,8 +1072,8 @@ const QuotationPage = () => {
                     }
                   >
                     {vehicleData.map(vehicle => (
-                      <Option 
-                        key={vehicle.id} 
+                      <Option
+                        key={vehicle.id}
                         value={vehicle.id}
                         disabled={vehicle.availableInstances === 0}
                       >
@@ -1131,8 +1140,8 @@ const QuotationPage = () => {
 
             {/* Display promotion and discount info if applicable */}
             {form.getFieldValue('discount_amount') > 0 && (
-              <Card 
-                size="small" 
+              <Card
+                size="small"
                 style={{ marginBottom: 16, backgroundColor: '#fff7e6', border: '1px solid #ffa940' }}
               >
                 <Row gutter={[16, 8]}>
@@ -1143,7 +1152,7 @@ const QuotationPage = () => {
                         .format(form.getFieldValue('original_price') || 0)}
                     </Text>
                   </Col>
-                  
+
                   {form.getFieldValue('promotion_discount') > 0 && (
                     <Col span={24}>
                       <Text strong style={{ color: '#ff4d4f' }}>Khuyến mãi:</Text>
@@ -1153,7 +1162,7 @@ const QuotationPage = () => {
                       </Text>
                     </Col>
                   )}
-                  
+
                   {form.getFieldValue('class_discount') > 0 && (
                     <Col span={24}>
                       <Text strong style={{ color: '#faad14' }}>
@@ -1165,7 +1174,7 @@ const QuotationPage = () => {
                       </Text>
                     </Col>
                   )}
-                  
+
                   <Col span={24} style={{ borderTop: '1px solid #d9d9d9', paddingTop: 8, marginTop: 8 }}>
                     <Text strong>Tổng giảm giá:</Text>
                     <Text style={{ fontSize: '16px', color: '#ff4d4f', fontWeight: 'bold', marginLeft: 8 }}>
@@ -1199,7 +1208,7 @@ const QuotationPage = () => {
           open={isModalOpen && modalMode === 'view'}
           onCancel={() => setIsModalOpen(false)}
           footer={[
-            
+
             <Button key="close" onClick={() => setIsModalOpen(false)}>
               Đóng
             </Button>
