@@ -19,7 +19,14 @@ const LoginPage = () => {
       
       if (result.success) {
         message.success('Đăng nhập thành công!');
-        navigate('/dashboard');
+        
+        // Điều hướng theo role
+        const userRole = result.user?.role?.roleName;
+        if (userRole === 'Admin' || userRole === 'EVMStaff') {
+          navigate('/agencies');
+        } else {
+          navigate('/dashboard');
+        }
       } else {
         message.error(result.error || 'Đăng nhập thất bại');
       }
