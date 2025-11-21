@@ -102,8 +102,8 @@ const MainLayout = () => {
           icon: <BarChartOutlined />,
           label: 'Báo cáo & Phân tích',
           children: [
-            { key: '/reports/sales-by-region', label: 'Doanh số theo khu vực' },
-            { key: '/reports/sales-by-agency', label: 'Doanh số theo đại lý' },
+            // { key: '/reports/sales-by-region', label: 'Doanh số theo khu vực' },
+            // { key: '/reports/sales-by-agency', label: 'Doanh số theo đại lý' },
             
             { key: '/reports/consumption-speed', label: 'Tốc độ tiêu thụ' },
             { key: '/reports/prediction', label: 'Dự báo kế hoạch' }
