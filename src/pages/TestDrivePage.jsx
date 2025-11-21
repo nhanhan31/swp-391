@@ -36,7 +36,7 @@ import {
   MoreOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { testDriveAPI, customerAPI, agencyInventoryAPI } from '../services/quotationService';
+import { testDriveAPI, customerAPI, agencyInventoryAPI, vehicleInstanceAPI } from '../services/quotationService';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -68,14 +68,30 @@ const TestDrivePage = () => {
     try {
       const agencyId = getAgencyId();
       
-      const [testDrivesData, vehicleInstancesData, customersData] = await Promise.all([
+      const [testDrivesData, allVehicleInstances, inventoryData, customersData] = await Promise.all([
         testDriveAPI.getByAgencyId(agencyId),
+        vehicleInstanceAPI.getAll(),
         agencyInventoryAPI.getByAgencyId(agencyId),
         customerAPI.getAll()
       ]);
 
+      // Create a map of vehicle instance ID to status from getAll API
+      const instanceStatusMap = new Map(
+        allVehicleInstances.map(instance => [instance.id, instance.status])
+      );
+      
+      // Merge inventory data with status from vehicleInstanceAPI
+      const vehiclesWithDetails = inventoryData.map(inv => {
+        const status = instanceStatusMap.get(inv.vehicleInstanceId);
+        return {
+          vehicleInstanceId: inv.vehicleInstanceId,
+          status: status,
+          vehicleDetails: inv.vehicleDetails || {}
+        };
+      });
+
       setTestDrives(testDrivesData);
-      setVehicleInstances(vehicleInstancesData);
+      setVehicleInstances(vehiclesWithDetails);
       setCustomers(customersData);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -140,6 +156,25 @@ const TestDrivePage = () => {
       };
       
       await testDriveAPI.update(id, updateData);
+
+      // Update VehicleInstance status to Booked
+      if (testDrive.vehicleInstanceId) {
+        try {
+          const inventory = vehicleInstances.find(inv => inv.vehicleInstanceId === testDrive.vehicleInstanceId);
+          if (inventory && inventory.vehicleDetails) {
+            await vehicleInstanceAPI.update(testDrive.vehicleInstanceId, {
+              VehicleId: inventory.vehicleDetails.vehicleId,
+              Vin: inventory.vehicleDetails.vin,
+              EngineNumber: inventory.vehicleDetails.engineNumber,
+              Status: 'Booked'
+            });
+            console.log('Updated vehicle instance status to Booked');
+          }
+        } catch (error) {
+          console.error('Error updating vehicle instance status:', error);
+        }
+      }
+
       message.success('Đã xác nhận lịch hẹn');
       await fetchData();
     } catch (error) {
@@ -177,6 +212,25 @@ const TestDrivePage = () => {
           };
           
           await testDriveAPI.update(id, updateData);
+
+          // Update VehicleInstance status to Available
+          if (testDrive.vehicleInstanceId) {
+            try {
+              const inventory = vehicleInstances.find(inv => inv.vehicleInstanceId === testDrive.vehicleInstanceId);
+              if (inventory && inventory.vehicleDetails) {
+                await vehicleInstanceAPI.update(testDrive.vehicleInstanceId, {
+                  VehicleId: inventory.vehicleDetails.vehicleId,
+                  Vin: inventory.vehicleDetails.vin,
+                  EngineNumber: inventory.vehicleDetails.engineNumber,
+                  Status: 'Available'
+                });
+                console.log('Updated vehicle instance status to Available');
+              }
+            } catch (error) {
+              console.error('Error updating vehicle instance status:', error);
+            }
+          }
+
           message.success('Đã hủy lịch hẹn');
           await fetchData();
         } catch (error) {
@@ -242,6 +296,35 @@ const TestDrivePage = () => {
         };
         
         await testDriveAPI.update(selectedTestDrive.id, updateData);
+
+        // Update VehicleInstance status based on new status
+        if (selectedTestDrive.vehicleInstanceId) {
+          try {
+            const inventory = vehicleInstances.find(inv => inv.vehicleInstanceId === selectedTestDrive.vehicleInstanceId);
+            if (inventory && inventory.vehicleDetails) {
+              let newStatus = null;
+              
+              if (values.status === 'Scheduled') {
+                newStatus = 'Booked';
+              } else if (['Completed', 'NoShow', 'Cancelled'].includes(values.status)) {
+                newStatus = 'Available';
+              }
+
+              if (newStatus) {
+                await vehicleInstanceAPI.update(selectedTestDrive.vehicleInstanceId, {
+                  VehicleId: inventory.vehicleDetails.vehicleId,
+                  Vin: inventory.vehicleDetails.vin,
+                  EngineNumber: inventory.vehicleDetails.engineNumber,
+                  Status: newStatus
+                });
+                console.log(`Updated vehicle instance status to ${newStatus}`);
+              }
+            }
+          } catch (error) {
+            console.error('Error updating vehicle instance status:', error);
+          }
+        }
+
         message.success('Đã cập nhật lịch hẹn');
         await fetchData();
       } else if (modalMode === 'complete') {
@@ -253,6 +336,25 @@ const TestDrivePage = () => {
         };
         
         await testDriveAPI.update(selectedTestDrive.id, completeData);
+
+        // Update VehicleInstance status to Available
+        if (selectedTestDrive.vehicleInstanceId) {
+          try {
+            const inventory = vehicleInstances.find(inv => inv.vehicleInstanceId === selectedTestDrive.vehicleInstanceId);
+            if (inventory && inventory.vehicleDetails) {
+              await vehicleInstanceAPI.update(selectedTestDrive.vehicleInstanceId, {
+                VehicleId: inventory.vehicleDetails.vehicleId,
+                Vin: inventory.vehicleDetails.vin,
+                EngineNumber: inventory.vehicleDetails.engineNumber,
+                Status: 'Available'
+              });
+              console.log('Updated vehicle instance status to Available');
+            }
+          } catch (error) {
+            console.error('Error updating vehicle instance status:', error);
+          }
+        }
+
         message.success('Đã hoàn thành lịch hẹn lái thử');
         await fetchData();
       }
@@ -651,11 +753,20 @@ const TestDrivePage = () => {
                 >
                   <Select placeholder="Chọn xe" showSearch
                     optionFilterProp="children">
-                    {vehicleInstances.map(inventory => (
-                      <Option key={inventory.vehicleInstanceId} value={inventory.vehicleInstanceId}>
-                        {inventory.vehicleDetails.modelName} {inventory.vehicleDetails.variantName} - {inventory.vehicleDetails.color} - {inventory.vehicleDetails.engineNumber}
-                      </Option>
-                    ))}
+                    {vehicleInstances
+                      .filter(inventory => {
+                        const status = inventory.status?.toLowerCase();
+                        // Show vehicles that are: null, available, or in agency (IN_AGENCY_X)
+                        // Exclude: booked, reserved, sold
+                        return !status || 
+                               status === 'available' || 
+                               status.startsWith('in_agency');
+                      })
+                      .map(inventory => (
+                        <Option key={inventory.vehicleInstanceId} value={inventory.vehicleInstanceId}>
+                          {inventory.vehicleDetails.modelName} {inventory.vehicleDetails.variantName} - {inventory.vehicleDetails.color} - {inventory.vehicleDetails.engineNumber}
+                        </Option>
+                      ))}
                   </Select>
                 </Form.Item>
               </>

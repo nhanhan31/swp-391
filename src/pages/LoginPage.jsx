@@ -19,7 +19,14 @@ const LoginPage = () => {
       
       if (result.success) {
         message.success('Đăng nhập thành công!');
-        navigate('/dashboard');
+        
+        // Điều hướng theo role
+        const userRole = result.user?.role?.roleName;
+        if (userRole === 'Admin' || userRole === 'EVMStaff') {
+          navigate('/agencies');
+        } else {
+          navigate('/dashboard');
+        }
       } else {
         message.error(result.error || 'Đăng nhập thất bại');
       }
@@ -32,9 +39,9 @@ const LoginPage = () => {
 
   const demoAccounts = [
     { email: 'adminchat@gmail.com', password: 'Admin@123', role: 'Admin', description: 'Quản trị viên hệ thống' },
-    { email: 'evstaff3@gmail.com', password: '123456', role: 'EVM Staff', description: 'Nhân viên hãng xe' },
-    { email: 'agencymanager2@gmail.com', password: '123456', role: 'Agency Manager', description: 'Quản lý đại lý' },
-    { email: 'agencystaff3@gmail.com', password: '123456', role: 'Agency Staff', description: 'Nhân viên bán hàng' }
+    { email: 'evstaff2@gmail.com', password: '123456', role: 'EVM Staff', description: 'Nhân viên hãng xe' },
+    { email: 'agencymanager@gmail.com', password: '123456', role: 'Agency Manager', description: 'Quản lý đại lý' },
+    { email: 'agencystaff2@gmail.com', password: '123456', role: 'Agency Staff', description: 'Nhân viên bán hàng' }
   ];
 
   const handleDemoLogin = (account) => {

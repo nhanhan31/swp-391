@@ -9,10 +9,8 @@ import {
   Table,
   Tag,
   Image,
-  Divider,
   Alert,
   Empty,
-  Tooltip,
   Modal,
   Input,
   Spin,
@@ -23,620 +21,302 @@ import {
   SwapOutlined,
   DeleteOutlined,
   PlusOutlined,
-  SearchOutlined
+  SearchOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined
 } from '@ant-design/icons';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext'; // 1. Import Auth
 import { vehicleAPI, vehicleInstanceAPI, vehiclePriceAPI } from '../services/vehicleService';
-import { agencyInventoryAPI } from '../services/quotationService';
+import { agencyInventoryAPI } from '../services/quotationService'; // Import API kho đại lý
 import '../styles/VehicleComparePage.css';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
 
 const VehicleComparePage = () => {
-  const { isAdmin, isEVMStaff, isDealerManager, isDealerStaff, getAgencyId } = useAuth();
+  // 2. Lấy thông tin User
+  const { isDealerManager, isDealerStaff, getAgencyId } = useAuth();
+
+  // UI States
   const [selectedVehicles, setSelectedVehicles] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const maxCompare = 4;
+  const maxCompare = 3;
 
-  // API data states
+  // Data States
   const [loading, setLoading] = useState(true);
-  const [vehicles, setVehicles] = useState([]);
-  const [vehicleInstances, setVehicleInstances] = useState([]);
-  const [vehiclePrices, setVehiclePrices] = useState([]);
-  const [agencyInventory, setAgencyInventory] = useState([]);
+  const [vehicles, setVehicles] = useState([]);             // Danh sách Model xe
+  const [vehiclePrices, setVehiclePrices] = useState([]);   // Bảng giá
 
-  // Fetch data from API
+  // State để tính tồn kho (Dùng 1 trong 2 tùy role)
+  const [globalInstances, setGlobalInstances] = useState([]); // Dành cho Guest/Admin
+  const [agencyInventory, setAgencyInventory] = useState([]); // Dành cho Dealer
+
+  // --- FETCH DATA LOGIC ---
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        // Xác định quyền: Là Dealer hay là Guest/Admin
+        const isDealer = isDealerManager() || isDealerStaff();
         const agencyId = getAgencyId();
-        let availableInstanceIds = [];
-        
-        if (agencyId && (isDealerManager() || isDealerStaff())) {
-          const inventoryData = await agencyInventoryAPI.getByAgencyId(agencyId);
-          setAgencyInventory(inventoryData || []);
-          availableInstanceIds = (inventoryData || []).map(inv => inv.vehicleInstanceId);
-        }
 
-        const allInstancesData = await vehicleInstanceAPI.getAll();
-        const filteredInstances = (isDealerManager() || isDealerStaff())
-          ? (allInstancesData || []).filter(inst => availableInstanceIds.includes(inst.id))
-          : (allInstancesData || []);
-        
-        setVehicleInstances(filteredInstances);
-
-        const uniqueVehicleIds = [...new Set(filteredInstances.map(inst => inst.vehicleId))];
-
-        const [vehiclesData, pricesData] = await Promise.all([
+        // Luôn lấy Catalog xe và Giá (dữ liệu chung)
+        const [allVehicles, allPrices] = await Promise.all([
           vehicleAPI.getAll(),
           vehiclePriceAPI.getAll()
         ]);
 
-        const filteredVehicles = (vehiclesData || []).filter(v => uniqueVehicleIds.includes(v.id));
-        
-        setVehicles(filteredVehicles);
-        setVehiclePrices(pricesData || []);
+        setVehiclePrices(allPrices || []);
+
+        if (isDealer && agencyId) {
+          // === TRƯỜNG HỢP 1: LÀ ĐẠI LÝ (Lấy theo kho) ===
+          // Chỉ lấy xe trong kho của Agency này
+          const inventoryData = await agencyInventoryAPI.getByAgencyId(agencyId);
+          setAgencyInventory(inventoryData || []);
+
+          // Lọc ra danh sách ID các xe có trong kho
+          const availableVehicleIds = (inventoryData || []).map(
+            inv => inv.vehicleDetails?.vehicleId || inv.vehicleId
+          );
+          const uniqueIds = [...new Set(availableVehicleIds)];
+
+          // Chỉ hiển thị các Model xe có trong kho
+          const filteredVehicles = (allVehicles || []).filter(v => uniqueIds.includes(v.id));
+          setVehicles(filteredVehicles);
+
+        } else {
+          // === TRƯỜNG HỢP 2: KHÁCH/ADMIN (Lấy tất cả) ===
+          setVehicles(allVehicles || []);
+
+          // Lấy toàn bộ instance hệ thống để đếm số lượng (cho view Guest)
+          const allInstances = await vehicleInstanceAPI.getAll();
+          setGlobalInstances(allInstances || []);
+        }
 
       } catch (error) {
-        console.error('Error fetching vehicle data:', error);
-        message.error('Không thể tải dữ liệu xe. Vui lòng thử lại sau.');
+        console.error('Error fetching compare data:', error);
+        message.error('Không thể tải dữ liệu xe.');
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [getAgencyId, isDealerManager, isDealerStaff]);
+  }, [isDealerManager, isDealerStaff, getAgencyId]); // Dependency array quan trọng
 
-  // Combine vehicle data - group by vehicleId
+  // --- DATA PROCESSING (useMemo) ---
   const vehicleData = useMemo(() => {
     if (!vehicles.length) return [];
 
-    const vehicleGroups = {};
-    vehicleInstances.forEach(instance => {
-      if (!vehicleGroups[instance.vehicleId]) {
-        vehicleGroups[instance.vehicleId] = {
-          instances: [],
-          totalQuantity: 0
-        };
-      }
-      vehicleGroups[instance.vehicleId].instances.push(instance);
-      vehicleGroups[instance.vehicleId].totalQuantity += 1;
-    });
+    const isDealer = isDealerManager() || isDealerStaff();
 
+    // Bước 1: Tính tồn kho
+    const stockMap = {}; // { vehicleId: count }
+
+    if (isDealer) {
+      // Logic đếm cho Dealer (Dựa trên agencyInventory)
+      agencyInventory.forEach(inv => {
+        const vId = inv.vehicleDetails?.vehicleId || inv.vehicleId;
+        if (vId) stockMap[vId] = (stockMap[vId] || 0) + 1;
+      });
+    } else {
+      // Logic đếm cho Guest/Admin (Dựa trên globalInstances)
+      globalInstances.forEach(inst => {
+        const vId = inst.vehicleDetails?.vehicleId || inst.vehicleId;
+        if (vId) stockMap[vId] = (stockMap[vId] || 0) + 1;
+      });
+    }
+
+    // Bước 2: Map dữ liệu hiển thị
     return vehicles.map(vehicle => {
-      const group = vehicleGroups[vehicle.id];
-      if (!group) return null;
+      const priceObj = vehiclePrices.find(p => p.vehicleId === vehicle.id);
+      const stockCount = stockMap[vehicle.id] || 0;
 
-      const price = vehiclePrices.find(p => p.vehicleId === vehicle.id);
-
-      let availableColors = [vehicle.color].filter(Boolean);
-      
-      if (agencyInventory.length > 0) {
-        const inventoryColors = agencyInventory
-          .filter(inv => group.instances.some(inst => inst.id === inv.vehicleInstanceId))
-          .map(inv => inv.vehicleDetails?.color)
-          .filter(Boolean);
-        if (inventoryColors.length > 0) {
-          availableColors = [...new Set(inventoryColors)];
-        }
-      }
-
-      const isAvailable = group.totalQuantity > 0;
-      const status = isAvailable 
-        ? (group.totalQuantity < 5 ? 'limited' : 'available')
-        : 'out_of_stock';
+      // Logic trạng thái
+      // - Dealer: Chỉ thấy xe có trong kho nên luôn > 0 (do logic lọc ở useEffect)
+      // - Guest: Có thể thấy xe count = 0 (Catalog)
+      let status = 'out_of_stock';
+      if (stockCount > 5) status = 'available';
+      else if (stockCount > 0) status = 'limited';
 
       return {
         id: vehicle.id,
-        vehicleId: vehicle.id,
         variant_name: vehicle.variantName || 'Unknown',
-        model: {
-          model_name: vehicle.option?.modelName || 'Unknown Model'
-        },
-        color: availableColors.length > 0 ? availableColors.join(', ') : vehicle.color || 'N/A',
-        availableColors: availableColors,
+        model_name: vehicle.option?.modelName || vehicle.modelName || 'Unknown Model',
+        color: vehicle.color || 'Tiêu chuẩn',
+
+        // Specs
         battery_capacity: vehicle.batteryCapacity || 'N/A',
         range_km: parseInt(vehicle.rangeKM) || 0,
-        features: vehicle.features || 'Đang cập nhật',
+        features: vehicle.features || '',
         image_url: vehicle.vehicleImage,
+
+        // Computed
+        price: priceObj?.priceAmount || 0,
         status: status,
-        price: price,
-        finalPrice: price?.priceAmount || 0,
-        promotion: null,
-        quantity: group.totalQuantity,
-        instanceCount: group.instances.length
+        stockCount: stockCount // Số lượng thực tế (tại kho hoặc toàn hệ thống tùy view)
       };
-    }).filter(Boolean);
-  }, [vehicles, vehicleInstances, vehiclePrices, agencyInventory]);
+    });
+  }, [vehicles, vehiclePrices, globalInstances, agencyInventory, isDealerManager, isDealerStaff]);
 
-  // Format price
-  const formatPrice = (price) => {
-    if (!price) return 'Liên hệ';
-    return new Intl.NumberFormat('vi-VN', {
-      style: 'currency',
-      currency: 'VND'
-    }).format(price);
-  };
-
-  // Add vehicle to comparison
+  // --- ACTIONS ---
   const addVehicle = (vehicleId) => {
-    if (selectedVehicles.length >= maxCompare) {
-      return;
-    }
-    
+    if (selectedVehicles.length >= maxCompare) return;
     const vehicle = vehicleData.find(v => v.id === vehicleId);
-    if (vehicle && !selectedVehicles.find(v => v.id === vehicleId)) {
+    if (vehicle && !selectedVehicles.some(v => v.id === vehicleId)) {
       setSelectedVehicles([...selectedVehicles, vehicle]);
       setIsModalOpen(false);
       setSearchText('');
+      message.success('Đã thêm xe vào so sánh');
     }
   };
 
-  // Remove vehicle from comparison
-  const removeVehicle = (vehicleId) => {
-    setSelectedVehicles(prev => prev.filter(v => v.id !== vehicleId));
-  };
+  const removeVehicle = (id) => setSelectedVehicles(prev => prev.filter(v => v.id !== id));
+  const clearAll = () => setSelectedVehicles([]);
+  const formatPrice = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
 
-  // Clear all vehicles
-  const clearAll = () => {
-    setSelectedVehicles([]);
-  };
+  // Filter logic cho Modal
+  const filteredVehicles = vehicleData.filter(v => {
+    const isSelected = selectedVehicles.some(sel => sel.id === v.id);
+    const matchSearch =
+      v.variant_name.toLowerCase().includes(searchText.toLowerCase()) ||
+      v.model_name.toLowerCase().includes(searchText.toLowerCase());
+    return !isSelected && matchSearch;
+  });
 
-  // Open modal
-  const openModal = () => {
-    setIsModalOpen(true);
-  };
-
-  // Close modal
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setSearchText('');
-  };
-
-  // Get available vehicles for selection
-  const availableVehicles = vehicleData.filter(
-    v => !selectedVehicles.find(selected => selected.id === v.id)
-  );
-
-  // Filter vehicles by search text
-  const filteredVehicles = availableVehicles.filter(vehicle => 
-    vehicle.variant_name.toLowerCase().includes(searchText.toLowerCase()) ||
-    vehicle.model?.model_name.toLowerCase().includes(searchText.toLowerCase())
-  );
-
-  // Generate comparison data
-  const getComparisonData = () => {
-    if (selectedVehicles.length === 0) return [];
-
-    const comparisonRows = [
-      {
-        key: 'image',
-        label: 'Hình ảnh',
-        type: 'image'
-      },
-      {
-        key: 'variant_name',
-        label: 'Tên xe',
-        type: 'text'
-      },
-      {
-        key: 'model_name',
-        label: 'Dòng xe',
-        type: 'text'
-      },
-      {
-        key: 'color',
-        label: 'Màu sắc',
-        type: 'tag'
-      },
-      {
-        key: 'battery_capacity',
-        label: 'Dung lượng pin',
-        type: 'text'
-      },
-      {
-        key: 'range_km',
-        label: 'Quãng đường (km)',
-        type: 'number'
-      },
-      {
-        key: 'price',
-        label: 'Giá bán',
-        type: 'price'
-      },
-      {
-        key: 'promotion',
-        label: 'Khuyến mãi',
-        type: 'promotion'
-      },
-      {
-        key: 'final_price',
-        label: 'Giá sau khuyến mãi',
-        type: 'price_final'
-      },
-      {
-        key: 'features',
-        label: 'Tính năng',
-        type: 'features'
-      },
-      
-    ];
-
-    return comparisonRows.map(row => {
-      const rowData = { 
-        key: row.key, 
-        label: row.label, 
-        type: row.type 
-      };
-      
-      selectedVehicles.forEach((vehicle, index) => {
-        switch (row.key) {
-          case 'image':
-            rowData[`vehicle_${index}`] = vehicle.image_url || '/images/default-car.jpg';
-            break;
-          case 'variant_name':
-            rowData[`vehicle_${index}`] = vehicle.variant_name;
-            break;
-          case 'model_name':
-            rowData[`vehicle_${index}`] = vehicle.model?.model_name;
-            break;
-          case 'color':
-            rowData[`vehicle_${index}`] = vehicle.color;
-            break;
-          case 'battery_capacity':
-            rowData[`vehicle_${index}`] = vehicle.battery_capacity;
-            break;
-          case 'range_km':
-            rowData[`vehicle_${index}`] = vehicle.range_km;
-            break;
-          case 'price':
-            rowData[`vehicle_${index}`] = vehicle.price?.priceAmount;
-            break;
-          case 'promotion':
-            rowData[`vehicle_${index}`] = vehicle.promotion;
-            break;
-          case 'final_price':
-            rowData[`vehicle_${index}`] = vehicle.finalPrice;
-            break;
-          case 'features':
-            rowData[`vehicle_${index}`] = vehicle.features;
-            break;
-          case 'status':
-            rowData[`vehicle_${index}`] = vehicle.status;
-            break;
-          default:
-            rowData[`vehicle_${index}`] = '';
-        }
-      });
-      
-      return rowData;
-    });
-  };
-
-  // Render cell content based on type
-  const renderCellContent = (value, type) => {
-    switch (type) {
-      case 'image':
-        return (
-          <div className="compare-image">
-            <Image
-              src={value}
-              alt="Vehicle"
-              width={120}
-              height={80}
-              style={{ objectFit: 'cover', borderRadius: '4px' }}
-              preview={false}
-            />
-          </div>
-        );
-      case 'tag':
-        return <Tag color="blue">{value}</Tag>;
-      case 'number':
-        return <Text strong>{value?.toLocaleString()}</Text>;
-      case 'price':
-        return <Text>{formatPrice(value)}</Text>;
-      case 'promotion':
-        return value ? (
-          <Tag color="red">
-            {value.promo_name}<br/>
-            Giảm {formatPrice(value.discount_amount)}
-          </Tag>
-        ) : (
-          <Text type="secondary">Không có</Text>
-        );
-      case 'price_final':
-        return (
-          <Text strong style={{ color: '#f5222d', fontSize: '16px' }}>
-            {formatPrice(value)}
-          </Text>
-        );
-      case 'features':
-        return (
-          <Text ellipsis={{ tooltip: value }} style={{ maxWidth: '200px' }}>
-            {value}
-          </Text>
-        );
-      case 'status':
-        const statusColor = value === 'available' ? 'success' : 'error';
-        const statusText = value === 'available' ? 'Có sẵn' : 'Hết hàng';
-        return <Tag color={statusColor}>{statusText}</Tag>;
-      default:
-        return <Text>{value}</Text>;
-    }
-  };
-
-  // Generate table columns
+  // Table Columns
   const generateColumns = () => {
-    const columns = [
-      {
-        title: 'Thông số',
-        dataIndex: 'label',
-        key: 'label',
-        width: 200,
-        fixed: 'left',
-        render: (text) => <Text strong>{text}</Text>
-      }
-    ];
+    const cols = [{
+      title: 'Thông số',
+      dataIndex: 'label',
+      key: 'label',
+      width: 150,
+      fixed: 'left',
+      render: (t) => <Text type="secondary">{t}</Text>
+    }];
 
-    selectedVehicles.forEach((vehicle, index) => {
-      columns.push({
+    selectedVehicles.forEach((v, i) => {
+      cols.push({
         title: (
-          <div className="vehicle-column-header">
-            <div className="vehicle-name">{vehicle.variant_name}</div>
-            <Button
-              type="text"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              onClick={() => removeVehicle(vehicle.id)}
-              className="remove-button"
-            />
+          <div className="compare-header-cell">
+            <div className="car-name">{v.variant_name}</div>
+            <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeVehicle(v.id)} />
           </div>
         ),
-        dataIndex: `vehicle_${index}`,
-        key: `vehicle_${index}`,
-        width: 250,
-        render: (value, record) => renderCellContent(value, record.type)
+        dataIndex: `v_${i}`,
+        key: `v_${i}`,
+        width: 220,
+        align: 'center',
+        render: (val, record) => renderCellContent(val, record.type)
       });
     });
-
-    return columns;
+    return cols;
   };
 
-  const comparisonData = getComparisonData();
+  const renderCellContent = (val, type) => {
+    switch (type) {
+      case 'image': return <Image src={val} height={100} style={{ borderRadius: 8, objectFit: 'cover' }} fallback="error" />;
+      case 'price': return <Text strong style={{ color: '#f5222d', fontSize: 16 }}>{formatPrice(val)}</Text>;
+      case 'status':
+        if (val === 'available') return <Tag color="success" icon={<CheckCircleOutlined />}>Sẵn hàng</Tag>;
+        if (val === 'limited') return <Tag color="warning">Sắp hết</Tag>;
+        return <Tag color="default">Hết hàng</Tag>;
+      default: return <Text>{val}</Text>;
+    }
+  };
+
+  // Table Data
+  const dataSource = [
+    { key: 'img', label: 'Hình ảnh', type: 'image' },
+    { key: 'model', label: 'Dòng xe', type: 'text' },
+    { key: 'price', label: 'Giá niêm yết', type: 'price' },
+    { key: 'status', label: 'Tình trạng', type: 'status' },
+    { key: 'battery', label: 'Pin', type: 'text' },
+    { key: 'range', label: 'Quãng đường', type: 'text' },
+    { key: 'color', label: 'Màu sắc', type: 'text' },
+    { key: 'feat', label: 'Tính năng', type: 'text' },
+  ].map(row => {
+    const r = { key: row.key, label: row.label, type: row.type };
+    selectedVehicles.forEach((v, i) => {
+      switch (row.key) {
+        case 'img': r[`v_${i}`] = v.image_url; break;
+        case 'model': r[`v_${i}`] = v.model_name; break;
+        case 'price': r[`v_${i}`] = v.price; break;
+        case 'status': r[`v_${i}`] = v.status; break;
+        case 'battery': r[`v_${i}`] = v.battery_capacity; break;
+        case 'range': r[`v_${i}`] = `${v.range_km} km`; break;
+        case 'color': r[`v_${i}`] = v.color; break;
+        case 'feat': r[`v_${i}`] = v.features; break;
+        default: break;
+      }
+    });
+    return r;
+  });
 
   return (
-    <Spin spinning={loading} tip="Đang tải dữ liệu xe...">
-      <div className="vehicle-compare-page">
-        <div className="page-header">
-          <Title level={2}>
-            <SwapOutlined /> So sánh xe điện
-          </Title>
-          <Text type="secondary">
-            So sánh chi tiết các dòng xe để đưa ra lựa chọn tốt nhất
-          </Text>
-        </div>
-
-      {/* Vehicle Selection */}
-      <Card className="selection-card" style={{ marginBottom: '24px' }}>
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} md={12}>
-            <Space>
-              <Text strong>Thêm xe để so sánh:</Text>
-              <Button 
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={openModal}
-                disabled={selectedVehicles.length >= maxCompare}
-              >
-                Chọn xe
-              </Button>
-            </Space>
-          </Col>
-          <Col xs={24} md={12} style={{ textAlign: 'right' }}>
-            <Space>
+    <Spin spinning={loading}>
+      <div className="vehicle-compare-container">
+        <Card className="compare-controls" bordered={false} style={{ marginBottom: 16 }}>
+          <Row justify="space-between" align="middle">
+            <Col>
+              <Title level={4} style={{ margin: 0 }}><SwapOutlined /> So Sánh Xe</Title>
               <Text type="secondary">
-                {selectedVehicles.length}/{maxCompare} xe được chọn
+                {isDealerManager() || isDealerStaff() ? '(Kho đại lý)' : '(Toàn hệ thống)'}
               </Text>
-              {selectedVehicles.length > 0 && (
-                <Button onClick={clearAll} icon={<DeleteOutlined />}>
-                  Xóa tất cả
+            </Col>
+            <Col>
+              <Space>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)} disabled={selectedVehicles.length >= maxCompare}>
+                  Thêm xe
                 </Button>
-              )}
-            </Space>
-          </Col>
-        </Row>
-
-        {selectedVehicles.length >= maxCompare && (
-          <Alert
-            message={`Bạn có thể so sánh tối đa ${maxCompare} xe cùng lúc`}
-            type="warning"
-            showIcon
-            style={{ marginTop: '16px' }}
-          />
-        )}
-      </Card>
-
-      {/* Selected Vehicles Preview */}
-      {selectedVehicles.length > 0 && (
-        <Card className="preview-card" style={{ marginBottom: '24px' }}>
-          <Title level={4} style={{ marginBottom: '16px' }}>
-            Xe đã chọn ({selectedVehicles.length})
-          </Title>
-          <Row gutter={[16, 16]}>
-            {selectedVehicles.map((vehicle, index) => (
-              <Col key={vehicle.id} xs={24} sm={12} md={6}>
-                <Card 
-                  size="small" 
-                  className="selected-vehicle-card"
-                  cover={
-                    <Image
-                      src={vehicle.image_url || '/images/default-car.jpg'}
-                      alt={vehicle.variant_name}
-                      height={120}
-                      preview={false}
-                      style={{ objectFit: 'cover' }}
-                    />
-                  }
-                  actions={[
-                    <Tooltip title="Xóa khỏi so sánh">
-                      <Button
-                        type="text"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => removeVehicle(vehicle.id)}
-                      />
-                    </Tooltip>
-                  ]}
-                >
-                  <Card.Meta
-                    title={vehicle.variant_name}
-                    description={
-                      <Space direction="vertical" size="small">
-                        <Text type="secondary">{vehicle.model?.model_name}</Text>
-                        <Text strong style={{ color: '#f5222d' }}>
-                          {formatPrice(vehicle.finalPrice)}
-                        </Text>
-                      </Space>
-                    }
-                  />
-                </Card>
-              </Col>
-            ))}
-            
-            {/* Add more placeholder */}
-            {selectedVehicles.length < maxCompare && (
-              <Col xs={24} sm={12} md={6}>
-                <Card 
-                  className="add-vehicle-card"
-                  style={{ 
-                    height: '280px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    border: '2px dashed #d9d9d9'
-                  }}
-                  onClick={openModal}
-                >
-                  <Space direction="vertical" align="center">
-                    <PlusOutlined style={{ fontSize: '24px', color: '#d9d9d9' }} />
-                    <Text type="secondary">Thêm xe</Text>
-                  </Space>
-                </Card>
-              </Col>
-            )}
+                {selectedVehicles.length > 0 && <Button onClick={clearAll}>Xóa tất cả</Button>}
+              </Space>
+            </Col>
           </Row>
         </Card>
-      )}
 
-      {/* Comparison Table */}
-      {selectedVehicles.length >= 2 ? (
-        <Card className="comparison-table-card">
-          <Title level={4} style={{ marginBottom: '16px' }}>
-            <SwapOutlined /> Bảng so sánh chi tiết
-          </Title>
+        {selectedVehicles.length > 0 ? (
           <Table
             columns={generateColumns()}
-            dataSource={comparisonData}
+            dataSource={dataSource}
             pagination={false}
-            scroll={{ x: 'max-content' }}
-            className="comparison-table"
+            bordered
             size="middle"
+            scroll={{ x: 'max-content' }}
           />
-        </Card>
-      ) : (
-        <Card>
-          <Empty 
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              <Space direction="vertical" align="center">
-                <Text type="secondary">
-                  Vui lòng chọn ít nhất 2 xe để bắt đầu so sánh
-                </Text>
-                <Button 
-                  type="primary" 
-                  icon={<CarOutlined />}
-                  onClick={openModal}
-                >
-                  Chọn xe ngay
-                </Button>
-              </Space>
-            }
-          />
-        </Card>
-      )}
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa chọn xe nào">
+            <Button type="dashed" onClick={() => setIsModalOpen(true)}>Chọn xe ngay</Button>
+          </Empty>
+        )}
 
-      {/* Vehicle Selection Modal */}
-      <Modal
-        title={
-          <Space>
-            <CarOutlined />
-            <span>Chọn xe để so sánh</span>
-          </Space>
-        }
-        open={isModalOpen}
-        onCancel={closeModal}
-        footer={null}
-        width={800}
-        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }}
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
-          <Search
-            placeholder="Tìm kiếm xe theo tên hoặc dòng xe..."
-            allowClear
-            size="large"
-            prefix={<SearchOutlined />}
-            onChange={(e) => setSearchText(e.target.value)}
-            value={searchText}
-          />
-
-          {filteredVehicles.length === 0 ? (
-            <Empty description="Không tìm thấy xe phù hợp" />
-          ) : (
-            <Row gutter={[16, 16]}>
-              {filteredVehicles.map(vehicle => (
-                <Col key={vehicle.id} xs={24} sm={12}>
-                  <Card
-                    hoverable
-                    onClick={() => addVehicle(vehicle.id)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <Row gutter={16}>
-                      <Col span={8}>
-                        <Image
-                          src={vehicle.image_url || '/images/default-car.jpg'}
-                          alt={vehicle.variant_name}
-                          width="100%"
-                          height={80}
-                          preview={false}
-                          style={{ objectFit: 'cover', borderRadius: '4px' }}
-                        />
-                      </Col>
+        <Modal title="Chọn xe so sánh" open={isModalOpen} onCancel={() => setIsModalOpen(false)} footer={null} width={800}>
+          <Search placeholder="Tìm kiếm..." allowClear onChange={e => setSearchText(e.target.value)} style={{ marginBottom: 16 }} />
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <Row gutter={[12, 12]}>
+              {filteredVehicles.map(v => (
+                <Col span={12} key={v.id}>
+                  <Card hoverable size="small" onClick={() => addVehicle(v.id)} style={{ cursor: 'pointer' }}>
+                    <Row gutter={12} align="middle">
+                      <Col span={8}><img src={v.image_url} alt="xe" style={{ width: '100%', borderRadius: 4 }} /></Col>
                       <Col span={16}>
-                        <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                          <Text strong>{vehicle.variant_name}</Text>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>
-                            {vehicle.model?.model_name}
-                          </Text>
-                          <Tag color="blue">{vehicle.color}</Tag>
-                          <Text strong style={{ color: '#f5222d' }}>
-                            {formatPrice(vehicle.finalPrice)}
-                          </Text>
-                        </Space>
+                        <div style={{ fontWeight: 'bold' }}>{v.variant_name}</div>
+                        <div style={{ fontSize: 12, color: '#666' }}>{v.model_name}</div>
+                        <div style={{ color: '#f5222d' }}>{formatPrice(v.price)}</div>
+                        {/* Nếu là Dealer, hiển thị số lượng tồn kho cụ thể */}
+                        {(isDealerManager() || isDealerStaff()) && (
+                          <Tag color="blue" style={{ marginTop: 4 }}>Kho: {v.stockCount}</Tag>
+                        )}
                       </Col>
                     </Row>
                   </Card>
                 </Col>
               ))}
             </Row>
-          )}
-        </Space>
-      </Modal>
+            {filteredVehicles.length === 0 && <Empty description="Không tìm thấy xe" />}
+          </div>
+        </Modal>
       </div>
     </Spin>
   );

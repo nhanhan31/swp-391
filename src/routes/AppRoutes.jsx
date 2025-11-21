@@ -30,6 +30,7 @@ import VehicleDiscountPage from '../pages/VehicleDiscountPage';
 import AgencyManagementPage from '../pages/AgencyManagementPage';
 import AgencyContractPage from '../pages/AgencyContractPage';
 import AgencyOrderPage from '../pages/AgencyOrderPage';
+import AgencyPaymentPage from '../pages/AgencyPaymentPage';
 import AgencyOrderManagementPage from '../pages/AgencyOrderManagementPage';
 import AgencyTargetPage from '../pages/AgencyTargetPage';
 import AgencyDebtPage from '../pages/AgencyDebtPage';
@@ -43,6 +44,7 @@ import UsersPage from '../pages/UsersPage';
 import RolesPage from '../pages/RolesPage';
 import UnauthorizedPage from '../pages/UnauthorizedPage';
 import LandingPage from '../pages/LandingPage';
+import DemandForecast from '../components/DemandForecast';
 
 const AppRoutes = () => {
     return (
@@ -136,6 +138,11 @@ const AppRoutes = () => {
                         <Route
                             path="agencies/orders"
                             element={<AgencyOrderPage />}
+                        />
+
+                        <Route
+                            path="agencies/payments"
+                            element={<AgencyPaymentPage />}
                         />
 
                         <Route
@@ -250,7 +257,11 @@ const AppRoutes = () => {
 
                         <Route
                             path="reports/agency-debts"
-                            element={<AgencyDebtReportPage />}
+                            element={<AgencyDebtPage />}
+                        />
+                        <Route
+                            path="reports/prediction"
+                            element={<DemandForecast />}
                         />
                     </Route>
 

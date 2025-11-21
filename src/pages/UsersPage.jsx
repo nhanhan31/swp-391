@@ -1,167 +1,192 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Card,
   Table,
-  Row,
-  Col,
-  Typography,
-  Tag,
-  Statistic,
   Button,
-  Dropdown,
+  Tag,
+  Space,
+  Typography,
   Modal,
   Form,
   Input,
   Select,
   Avatar,
-  message,
   Descriptions,
+  Statistic,
+  Row,
+  Col,
+  message,
+  Popconfirm,
   Spin,
-  Upload
+  Upload,
+  Dropdown
 } from 'antd';
 import {
-  UserOutlined,
   TeamOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LockOutlined,
-  MailOutlined,
-  PhoneOutlined,
   PlusOutlined,
   EditOutlined,
   EyeOutlined,
-  MoreOutlined,
-  ShopOutlined,
-  SafetyOutlined,
-  UploadOutlined
+  DeleteOutlined,
+  SearchOutlined,
+  UserOutlined,
+  LockOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  UploadOutlined,
+  MoreOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
 const USER_API = 'https://user.agencymanagement.online/api';
-const AGENCY_API = 'https://agency.agencymanagement.online/api';
 
 const { Title, Text } = Typography;
 const { Password } = Input;
 
-const AgencyAccountPage = () => {
+const UsersPage = () => {
   const { currentUser } = useAuth();
   const [userList, setUserList] = useState([]);
-  const [agencies, setAgencies] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'view'
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState('create'); // 'create', 'edit', 'view'
   const [selectedUser, setSelectedUser] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [form] = Form.useForm();
+  const [searchText, setSearchText] = useState('');
+  const [filterRole, setFilterRole] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
 
-  // Fetch agencies
+  // Fetch roles
   useEffect(() => {
-    const fetchAgencies = async () => {
+    const fetchRoles = async () => {
       try {
-        const response = await axios.get(`${AGENCY_API}/Agency`, {
+        const response = await axios.get(`${USER_API}/Role`, {
           headers: {
             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
           }
         });
-        setAgencies(response.data || []);
+        setRoles(response.data || []);
       } catch (error) {
-        console.error('Error fetching agencies:', error);
-        message.error('Không thể tải danh sách đại lý');
+        console.error('Error fetching roles:', error);
+        message.error('Không thể tải danh sách vai trò');
       }
     };
 
-    fetchAgencies();
+    fetchRoles();
   }, []);
 
-  // Fetch users
+  // Fetch all users
   useEffect(() => {
-    const fetchUsers = async () => {
-      setLoading(true);
-      try {
-        const response = await axios.get(`${USER_API}/User`, {
-          headers: {
-            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-          }
-        });
-        
-        console.log('All users:', response.data);
-        console.log('Sample user:', response.data[0]);
-        
-        // Filter only agency users (AgencyManager and AgencyStaff)
-        const agencyUsers = (response.data || []).filter(user => 
-          user.role?.roleName === 'AgencyManager' || user.role?.roleName === 'AgencyStaff'
-        );
-        
-        console.log('Filtered agency users:', agencyUsers);
-        
-        setUserList(agencyUsers);
-      } catch (error) {
-        console.error('Error fetching users:', error);
-        message.error('Không thể tải danh sách người dùng');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchUsers();
   }, []);
 
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${USER_API}/User`, {
+        headers: {
+          'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+        }
+      });
+      
+      setUserList(response.data || []);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      message.error('Không thể tải danh sách người dùng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Transform and filter users
   const userData = useMemo(() => {
-    return userList.map(user => {
-      const agency = agencies.find(a => a.id === user.agencyId);
+    return userList.map(user => ({
+      id: user.id,
+      username: user.userName,
+      full_name: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      avatar_url: user.avartarUrl,
+      status: user.status,
+      role_name: user.role?.roleName,
+      role_id: user.role?.id,
+      created_at: user.created_At,
+      updated_at: user.updated_At
+    })).sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
+  }, [userList]);
 
-      return {
-        id: user.id,
-        username: user.userName,
-        full_name: user.fullName,
-        email: user.email,
-        phone: user.phone,
-        avatar_url: user.avartarUrl,
-        status: user.status,
-        role_name: user.role?.roleName,
-        role_id: user.role?.id,
-        agency_id: user.agencyId,
-        agency_name: agency?.agencyName || 'Chưa xác định',
-        agency_location: agency?.location || '',
-        created_at: user.created_At,
-        updated_at: user.updated_At
-      };
-    }).sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
-  }, [userList, agencies]);
-
-  const totalAccounts = userData.length;
-  const activeAccounts = userData.filter(u => u.status === 'Active').length;
-  const inactiveAccounts = userData.filter(u => u.status === 'Inactive').length;
-  const managerAccounts = userData.filter(u => u.role_name === 'AgencyManager').length;
-
-  const handleCreate = () => {
-    setModalMode('create');
-    setSelectedUser(null);
-    form.resetFields();
-    setAvatarFile(null);
-    setIsModalOpen(true);
-  };
-
-  const handleEdit = (record) => {
-    setModalMode('edit');
-    setSelectedUser(record);
-    form.setFieldsValue({
-      full_name: record.full_name,
-      email: record.email,
-      phone: record.phone,
-      status: record.status,
-      agency_id: record.agency_id
+  const filteredUsers = useMemo(() => {
+    return userData.filter(user => {
+      const matchSearch = 
+        user.full_name?.toLowerCase().includes(searchText.toLowerCase()) ||
+        user.username?.toLowerCase().includes(searchText.toLowerCase()) ||
+        user.email?.toLowerCase().includes(searchText.toLowerCase());
+      const matchRole = filterRole === 'all' || user.role_id === parseInt(filterRole);
+      const matchStatus = filterStatus === 'all' || user.status === filterStatus;
+      return matchSearch && matchRole && matchStatus;
     });
-    setAvatarFile(null);
-    setIsModalOpen(true);
+  }, [userData, searchText, filterRole, filterStatus]);
+
+  // Statistics
+  const statistics = useMemo(() => {
+    const activeUsers = userData.filter(u => u.status === 'Active').length;
+    const inactiveUsers = userData.filter(u => u.status === 'Inactive').length;
+    const adminUsers = userData.filter(u => u.role_name === 'Admin').length;
+    const evmStaffUsers = userData.filter(u => u.role_name === 'EVMStaff').length;
+
+    return {
+      total: userData.length,
+      activeUsers,
+      inactiveUsers,
+      adminUsers,
+      evmStaffUsers
+    };
+  }, [userData]);
+
+  const roleTag = (roleName) => {
+    const roleColors = {
+      'Admin': 'red',
+      'EVMStaff': 'blue',
+      'AgencyManager': 'green',
+      'AgencyStaff': 'cyan'
+    };
+    return <Tag color={roleColors[roleName] || 'default'}>{roleName}</Tag>;
   };
 
-  const handleView = (record) => {
-    setModalMode('view');
+  const statusMeta = (status) => {
+    return status === 'Active'
+      ? { color: 'green', text: 'Hoạt động', icon: <CheckCircleOutlined /> }
+      : { color: 'red', text: 'Ngừng hoạt động', icon: <CloseCircleOutlined /> };
+  };
+
+  const handleOpenModal = (mode, record = null) => {
+    setModalMode(mode);
     setSelectedUser(record);
-    setIsModalOpen(true);
+    setIsModalVisible(true);
+    setAvatarFile(null);
+
+    if (mode === 'edit' && record) {
+      form.setFieldsValue({
+        full_name: record.full_name,
+        email: record.email,
+        phone: record.phone,
+        role_id: record.role_id,
+        status: record.status
+      });
+    } else if (mode === 'create') {
+      form.resetFields();
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalVisible(false);
+    setSelectedUser(null);
+    setAvatarFile(null);
+    form.resetFields();
   };
 
   const handleSubmit = async () => {
@@ -183,7 +208,7 @@ const AgencyAccountPage = () => {
           formData.append('AvatarFile', avatarFile);
         }
 
-        const userResponse = await axios.post(
+        await axios.post(
           `${USER_API}/User`,
           formData,
           {
@@ -194,27 +219,14 @@ const AgencyAccountPage = () => {
           }
         );
 
-        // Assign user to agency
-        const newUserId = userResponse.data.id;
-        await axios.post(
-          `${AGENCY_API}/Agency/${values.agency_id}/assign-user`,
-          { userId: newUserId },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-            }
-          }
-        );
-
-        message.success('Tạo tài khoản và phân bổ đại lý thành công');
+        message.success('Tạo người dùng mới thành công');
       } else if (modalMode === 'edit') {
         const formData = new FormData();
         formData.append('FullName', values.full_name);
         formData.append('Email', values.email);
         formData.append('Phone', values.phone);
         formData.append('Status', values.status);
-        formData.append('RoleId', selectedUser.role_id);
+        formData.append('RoleId', values.role_id);
         
         if (avatarFile) {
           formData.append('AvatarFile', avatarFile);
@@ -231,55 +243,14 @@ const AgencyAccountPage = () => {
           }
         );
 
-        // Check if agency changed, then reassign
-        if (values.agency_id && values.agency_id !== selectedUser.agency_id) {
-          // Remove from old agency
-          if (selectedUser.agency_id) {
-            await axios.post(
-              `${AGENCY_API}/Agency/${selectedUser.agency_id}/remove-user`,
-              { userId: selectedUser.id },
-              {
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                }
-              }
-            );
-          }
-
-          // Assign to new agency
-          await axios.post(
-            `${AGENCY_API}/Agency/${values.agency_id}/assign-user`,
-            { userId: selectedUser.id },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-              }
-            }
-          );
-        }
-
-        message.success('Cập nhật tài khoản thành công');
+        message.success('Cập nhật người dùng thành công');
       }
         
-      // Refresh user list
-      const response = await axios.get(`${USER_API}/User`, {
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-        }
-      });
-      const agencyUsers = (response.data || []).filter(user => 
-        user.role?.roleName === 'AgencyManager' || user.role?.roleName === 'AgencyStaff'
-      );
-      setUserList(agencyUsers);
-
-      form.resetFields();
-      setAvatarFile(null);
-      setIsModalOpen(false);
+      await fetchUsers();
+      handleCloseModal();
     } catch (error) {
       console.error('Error submitting user:', error);
-      message.error('Không thể lưu thông tin tài khoản');
+      message.error('Không thể lưu thông tin người dùng');
     } finally {
       setLoading(false);
     }
@@ -287,8 +258,8 @@ const AgencyAccountPage = () => {
 
   const handleDelete = async (record) => {
     Modal.confirm({
-      title: 'Xác nhận xóa tài khoản',
-      content: `Bạn có chắc chắn muốn xóa tài khoản "${record.full_name}" (@${record.username})?`,
+      title: 'Xác nhận xóa người dùng',
+      content: `Bạn có chắc chắn muốn xóa người dùng "${record.full_name}" (@${record.username})?`,
       okText: 'Xóa',
       cancelText: 'Hủy',
       okType: 'danger',
@@ -296,21 +267,6 @@ const AgencyAccountPage = () => {
         try {
           setLoading(true);
           
-          // Remove user from agency first
-          if (record.agency_id) {
-            await axios.post(
-              `${AGENCY_API}/Agency/${record.agency_id}/remove-user`,
-              { userId: record.id },
-              {
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                }
-              }
-            );
-          }
-
-          // Then delete the user
           await axios.delete(
             `${USER_API}/User/${record.id}`,
             {
@@ -320,21 +276,11 @@ const AgencyAccountPage = () => {
             }
           );
 
-          message.success('Đã xóa tài khoản thành công');
-          
-          // Refresh user list
-          const response = await axios.get(`${USER_API}/User`, {
-            headers: {
-              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-            }
-          });
-          const agencyUsers = (response.data || []).filter(user => 
-            user.role?.roleName === 'AgencyManager' || user.role?.roleName === 'AgencyStaff'
-          );
-          setUserList(agencyUsers);
+          message.success('Đã xóa người dùng thành công');
+          await fetchUsers();
         } catch (error) {
           console.error('Error deleting user:', error);
-          message.error('Không thể xóa tài khoản');
+          message.error('Không thể xóa người dùng');
         } finally {
           setLoading(false);
         }
@@ -401,81 +347,58 @@ const AgencyAccountPage = () => {
     });
   };
 
-  const statusMeta = (status) => {
-    return status === 'Active'
-      ? { color: 'green', text: 'Hoạt động', icon: <CheckCircleOutlined /> }
-      : { color: 'red', text: 'Ngừng hoạt động', icon: <CloseCircleOutlined /> };
-  };
-
-  const roleTag = (roleName) => {
-    switch (roleName) {
-      case 'AgencyManager':
-        return <Tag color="blue" icon={<SafetyOutlined />}>Agency Manager</Tag>;
-      case 'AgencyStaff':
-        return <Tag color="cyan" icon={<UserOutlined />}>Agency Staff</Tag>;
-      default:
-        return <Tag color="default">Khác</Tag>;
-    }
-  };
-
   const columns = [
     {
       title: 'Người dùng',
       key: 'user',
       width: 250,
+      fixed: 'left',
       render: (_, record) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Avatar size={48} icon={<UserOutlined />} src={record.avatar_url} />
+        <Space>
+          <Avatar 
+            src={record.avatar_url} 
+            icon={<UserOutlined />}
+            size={40}
+          />
           <div>
             <Text strong>{record.full_name}</Text>
             <br />
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              @{record.username}
-            </Text>
+            <Text type="secondary" style={{ fontSize: '12px' }}>@{record.username}</Text>
           </div>
-        </div>
+        </Space>
       )
     },
     {
-      title: 'Đại lý',
-      key: 'agency',
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
       width: 200,
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.agency_name}</Text>
-          <br />
-          <Text type="secondary" style={{ fontSize: '12px' }}>{record.agency_location}</Text>
-        </div>
+      render: (value) => (
+        <Space>
+          <MailOutlined style={{ color: '#1890ff' }} />
+          <Text>{value}</Text>
+        </Space>
       )
     },
     {
-      title: 'Liên hệ',
-      key: 'contact',
-      width: 200,
-      render: (_, record) => (
-        <div>
-          <div style={{ marginBottom: '4px' }}>
-            <MailOutlined style={{ marginRight: '8px', color: '#1890ff' }} />
-            <Text style={{ fontSize: '13px' }}>{record.email}</Text>
-          </div>
-          <div>
-            <PhoneOutlined style={{ marginRight: '8px', color: '#1890ff' }} />
-            <Text style={{ fontSize: '13px' }}>{record.phone}</Text>
-          </div>
-        </div>
+      title: 'Số điện thoại',
+      dataIndex: 'phone',
+      key: 'phone',
+      width: 130,
+      render: (value) => (
+        <Space>
+          <PhoneOutlined style={{ color: '#52c41a' }} />
+          <Text>{value}</Text>
+        </Space>
       )
     },
     {
       title: 'Vai trò',
-      dataIndex: 'role_name',
-      key: 'role_name',
+      key: 'role',
       width: 150,
-      render: (roleName) => roleTag(roleName),
-      filters: [
-        { text: 'Agency Manager', value: 'AgencyManager' },
-        { text: 'Agency Staff', value: 'AgencyStaff' }
-      ],
-      onFilter: (value, record) => record.role_name === value
+      render: (_, record) => roleTag(record.role_name),
+      filters: roles.map(role => ({ text: role.roleName, value: role.id })),
+      onFilter: (value, record) => record.role_id === value
     },
     {
       title: 'Trạng thái',
@@ -504,19 +427,20 @@ const AgencyAccountPage = () => {
       key: 'actions',
       width: 80,
       align: 'center',
+      fixed: 'right',
       render: (_, record) => {
         const items = [
           {
             key: 'view',
             icon: <EyeOutlined />,
             label: 'Xem chi tiết',
-            onClick: () => handleView(record)
+            onClick: () => handleOpenModal('view', record)
           },
           {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Chỉnh sửa',
-            onClick: () => handleEdit(record)
+            onClick: () => handleOpenModal('edit', record)
           },
           {
             key: 'password',
@@ -530,7 +454,7 @@ const AgencyAccountPage = () => {
           {
             key: 'delete',
             icon: <CloseCircleOutlined />,
-            label: 'Xóa tài khoản',
+            label: 'Xóa người dùng',
             danger: true,
             onClick: () => handleDelete(record)
           }
@@ -547,88 +471,135 @@ const AgencyAccountPage = () => {
 
   return (
     <Spin spinning={loading}>
-      <div className="agency-account-page">
+      <div className="users-page">
         <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <Title level={2}>
-              <TeamOutlined /> Quản lý tài khoản đại lý
+              <TeamOutlined /> Quản lý người dùng
             </Title>
-            <Text type="secondary">Quản lý tài khoản người dùng của các đại lý trên hệ thống</Text>
+            <Text type="secondary">Quản lý tất cả tài khoản người dùng trên hệ thống</Text>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
-            Tạo tài khoản mới
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleOpenModal('create')}
+            size="large"
+          >
+            Thêm người dùng
           </Button>
         </div>
 
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Tổng tài khoản"
-              value={totalAccounts}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Đang hoạt động"
-              value={activeAccounts}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Ngừng hoạt động"
-              value={inactiveAccounts}
-              prefix={<CloseCircleOutlined />}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Agency Manager"
-              value={managerAccounts}
-              prefix={<SafetyOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-      </Row>
+        <Row gutter={16} style={{ marginBottom: '24px' }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Tổng người dùng"
+                value={statistics.total}
+                prefix={<TeamOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Đang hoạt động"
+                value={statistics.activeUsers}
+                prefix={<CheckCircleOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Admin"
+                value={statistics.adminUsers}
+                valueStyle={{ color: '#f5222d' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="EVM Staff"
+                value={statistics.evmStaffUsers}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
-      <Card title="Danh sách tài khoản">
+      <Card>
+        <Space style={{ marginBottom: '16px', width: '100%', justifyContent: 'space-between' }}>
+          <Space>
+            <Input
+              placeholder="Tìm kiếm theo tên, email..."
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 300 }}
+              allowClear
+            />
+            <Select
+              value={filterRole}
+              onChange={setFilterRole}
+              style={{ width: 150 }}
+              placeholder="Vai trò"
+            >
+              <Select.Option value="all">Tất cả vai trò</Select.Option>
+              {roles.map(role => (
+                <Select.Option key={role.id} value={role.id.toString()}>
+                  {role.roleName}
+                </Select.Option>
+              ))}
+            </Select>
+            <Select
+              value={filterStatus}
+              onChange={setFilterStatus}
+              style={{ width: 150 }}
+            >
+              <Select.Option value="all">Tất cả trạng thái</Select.Option>
+              <Select.Option value="active">Hoạt động</Select.Option>
+              <Select.Option value="inactive">Không hoạt động</Select.Option>
+            </Select>
+          </Space>
+        </Space>
+
         <Table
           columns={columns}
-          dataSource={userData}
+          dataSource={filteredUsers}
           rowKey="id"
-          scroll={{ x: 1200 }}
           pagination={{
             pageSize: 10,
-            showTotal: (total) => `Tổng ${total} tài khoản`
+            showSizeChanger: true,
+            showTotal: (total) => `Tổng ${total} người dùng`
           }}
+          scroll={{ x: 1200 }}
         />
       </Card>
 
       <Modal
-        title={modalMode === 'create' ? 'Tạo tài khoản mới' : modalMode === 'edit' ? 'Chỉnh sửa tài khoản' : 'Chi tiết tài khoản'}
-        open={isModalOpen}
-        onCancel={() => setIsModalOpen(false)}
-        onOk={modalMode !== 'view' ? handleSubmit : undefined}
-        okText={modalMode === 'create' ? 'Tạo tài khoản' : 'Cập nhật'}
-        cancelText={modalMode === 'view' ? 'Đóng' : 'Hủy'}
+        title={
+          modalMode === 'create' ? 'Thêm người dùng mới' :
+          modalMode === 'edit' ? 'Chỉnh sửa người dùng' :
+          'Chi tiết người dùng'
+        }
+        open={isModalVisible}
+        onCancel={handleCloseModal}
+        footer={
+          modalMode === 'view' ? (
+            <Button onClick={handleCloseModal}>Đóng</Button>
+          ) : (
+            <>
+              <Button onClick={handleCloseModal}>Hủy</Button>
+              <Button type="primary" onClick={handleSubmit}>
+                {modalMode === 'create' ? 'Thêm' : 'Cập nhật'}
+              </Button>
+            </>
+          )
+        }
         width={700}
-        footer={modalMode === 'view' ? [
-          <Button key="close" type="primary" onClick={() => setIsModalOpen(false)}>
-            Đóng
-          </Button>
-        ] : undefined}
       >
         {modalMode === 'view' && selectedUser ? (
           <div style={{ padding: '16px 0' }}>
@@ -642,11 +613,6 @@ const AgencyAccountPage = () => {
               </Col>
               <Col span={24}>
                 <Descriptions bordered column={1}>
-                  <Descriptions.Item label="Đại lý">
-                    <Text strong>{selectedUser.agency_name}</Text>
-                    {' - '}
-                    <Text type="secondary">{selectedUser.agency_location}</Text>
-                  </Descriptions.Item>
                   <Descriptions.Item label="Vai trò">
                     {roleTag(selectedUser.role_name)}
                   </Descriptions.Item>
@@ -686,7 +652,7 @@ const AgencyAccountPage = () => {
                     { pattern: /^[a-z0-9_]+$/, message: 'Chỉ chấp nhận chữ thường, số và _' }
                   ]}
                 >
-                  <Input prefix={<UserOutlined />} placeholder="VD: staff_hanoi" />
+                  <Input prefix={<UserOutlined />} placeholder="VD: admin_system" />
                 </Form.Item>
 
                 <Form.Item
@@ -706,24 +672,9 @@ const AgencyAccountPage = () => {
                   rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
                 >
                   <Select placeholder="Chọn vai trò">
-                    <Select.Option value={4}>Agency Manager</Select.Option>
-                    <Select.Option value={5}>Agency Staff</Select.Option>
-                  </Select>
-                </Form.Item>
-
-                <Form.Item
-                  name="agency_id"
-                  label="Đại lý"
-                  rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
-                >
-                  <Select
-                    placeholder="Chọn đại lý"
-                    showSearch
-                    optionFilterProp="children"
-                  >
-                    {agencies.map(agency => (
-                      <Select.Option key={agency.id} value={agency.id}>
-                        {agency.agencyName} - {agency.location}
+                    {roles.map(role => (
+                      <Select.Option key={role.id} value={role.id}>
+                        {role.roleName}
                       </Select.Option>
                     ))}
                   </Select>
@@ -741,18 +692,14 @@ const AgencyAccountPage = () => {
 
             {modalMode === 'edit' && (
               <Form.Item
-                name="agency_id"
-                label="Đại lý"
-                rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}
+                name="role_id"
+                label="Vai trò"
+                rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
               >
-                <Select
-                  placeholder="Chọn đại lý"
-                  showSearch
-                  optionFilterProp="children"
-                >
-                  {agencies.map(agency => (
-                    <Select.Option key={agency.id} value={agency.id}>
-                      {agency.agencyName} - {agency.location}
+                <Select placeholder="Chọn vai trò">
+                  {roles.map(role => (
+                    <Select.Option key={role.id} value={role.id}>
+                      {role.roleName}
                     </Select.Option>
                   ))}
                 </Select>
@@ -828,9 +775,9 @@ const AgencyAccountPage = () => {
           </Form>
         )}
       </Modal>
-    </div>
+      </div>
     </Spin>
   );
 };
 
-export default AgencyAccountPage;
+export default UsersPage;
