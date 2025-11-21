@@ -81,10 +81,14 @@ const AgencyPaymentPage = () => {
           agencyPlans.map(async (plan) => {
             try {
               const items = await installmentAPI.getItemsByPlanId(plan.id);
+              // Find contract by ID to get contractNumber
+              const contract = contracts.find(c => c.id === plan.agencyContractId);
+              
               return { 
                 ...plan, 
                 items: items || [],
-                totalPaid: plan.totalPaid || 0  // Ensure totalPaid is not null
+                totalPaid: plan.totalPaid || 0,  // Ensure totalPaid is not null
+                contractNumber: contract?.contractNumber
               };
             } catch (error) {
               console.error(`Error fetching items for plan ${plan.id}:`, error);
@@ -285,6 +289,15 @@ const AgencyPaymentPage = () => {
       
       await installmentAPI.processPayment(paymentData);
 
+      // Check if payment is complete - update plan status to Completed
+      const totalAfterPayment = (selectedPlan.totalPaid || 0) + values.amount;
+      const totalDebt = (selectedPlan.principalAmount || 0) - (selectedPlan.depositAmount || 0);
+      
+      if (totalAfterPayment >= totalDebt) {
+        console.log('💯 Payment completed! Updating plan status to Completed');
+        await installmentAPI.updatePlanStatus(selectedPlan.id, { status: 'Completed' });
+      }
+
       message.success('Thanh toán thành công!');
       setIsPaymentModalOpen(false);
 
@@ -298,7 +311,12 @@ const AgencyPaymentPage = () => {
         agencyPlans.map(async (plan) => {
           try {
             const items = await installmentAPI.getItemsByPlanId(plan.id);
-            return { ...plan, items: items || [] };
+            const contract = contracts.find(c => c.id === plan.agencyContractId);
+            return { 
+              ...plan, 
+              items: items || [],
+              contractNumber: contract?.contractNumber
+            };
           } catch (error) {
             return { ...plan, items: [] };
           }
@@ -330,11 +348,13 @@ const AgencyPaymentPage = () => {
       render: (id) => <Text strong code>IP{id.toString().padStart(4, '0')}</Text>
     },
     {
-      title: 'Mã HĐ',
-      dataIndex: 'agencyContractId',
-      key: 'agencyContractId',
-      width: 100,
-      render: (id) => <Text code>AC{id?.toString().padStart(4, '0')}</Text>
+      title: 'Số hợp đồng',
+      dataIndex: 'contractNumber',
+      key: 'contractNumber',
+      width: 150,
+      render: (contractNumber, record) => (
+        <Text code>{contractNumber || `AC${record.agencyContractId?.toString().padStart(4, '0')}`}</Text>
+      )
     },
     {
       title: 'Tổng giá trị',
@@ -573,8 +593,8 @@ const AgencyPaymentPage = () => {
           <Descriptions.Item label="Mã kế hoạch" span={1}>
             <Text strong code>IP{selectedPlan?.id.toString().padStart(4, '0')}</Text>
           </Descriptions.Item>
-          <Descriptions.Item label="Mã hợp đồng" span={1}>
-            <Text code>AC{selectedPlan?.agencyContractId?.toString().padStart(4, '0')}</Text>
+          <Descriptions.Item label="Số hợp đồng" span={1}>
+            <Text code>{selectedPlan?.contractNumber || `AC${selectedPlan?.agencyContractId?.toString().padStart(4, '0')}`}</Text>
           </Descriptions.Item>
           <Descriptions.Item label="Tổng giá trị" span={1}>
             <Text strong style={{ fontSize: '16px' }}>

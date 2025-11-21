@@ -230,9 +230,9 @@ const VehicleAllocationPage = () => {
       const allPrices = await vehiclePriceAPI.getAll();
       console.log('All vehicle prices:', allPrices);
       
-      // Tìm giá cho vehicleId này (lấy giá MSRP)
+      // Tìm giá cho vehicleId này (lấy giá Wholesale)
       const vehiclePrice = allPrices.find(p => 
-        p.vehicleId === selectedOrder.vehicleId && p.priceType === 'MSRP'
+        p.vehicleId === selectedOrder.vehicleId && p.priceType === 'Wholesale'
       );
       
       console.log('Vehicle price found:', vehiclePrice);

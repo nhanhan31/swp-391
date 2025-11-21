@@ -8,6 +8,7 @@ import {
   Modal,
   Form,
   Input,
+  Select,
   Row,
   Col,
   Typography,
@@ -31,13 +32,16 @@ import {
   MoreOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { customerAPI, emailVerificationAPI } from '../services/quotationService';
+import { customerAPI, emailVerificationAPI, orderAPI, quotationAPI } from '../services/quotationService';
+import { useAuth } from '../context/AuthContext';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 const CustomerPage = () => {
+  const { getAgencyId } = useAuth();
   const [customers, setCustomers] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create');
@@ -55,27 +59,58 @@ const CustomerPage = () => {
   // Fetch customers from API
   useEffect(() => {
     const fetchCustomers = async () => {
+      const agencyId = getAgencyId();
+      if (!agencyId) {
+        console.log('CustomerPage - No agencyId found');
+        return;
+      }
+
       setLoading(true);
       try {
         const customersData = await customerAPI.getAll();
         console.log('CustomerPage - Customers data:', customersData);
+        console.log('CustomerPage - Current agencyId:', agencyId);
 
-        // Transform API data
-        const transformedCustomers = customersData.map(customer => ({
-          id: customer.id,
-          customer_code: `KH${customer.id.toString().padStart(4, '0')}`,
-          full_name: customer.fullName,
-          phone: customer.phone,
-          email: customer.email,
-          address: customer.address,
-          created_at: customer.createAt,
-          total_quotations: 0, // Can be calculated if needed
-          total_orders: 0,
-          total_test_drives: 0,
-          total_feedback: 0,
-          status: 'active' // Default status
-        }));
+        // Fetch orders to count per customer
+        const ordersData = await orderAPI.getByAgencyId(agencyId);
+        console.log('CustomerPage - Orders data:', ordersData);
+        setOrders(ordersData);
 
+        // Count orders per customer
+        const orderCountByCustomer = {};
+        ordersData.forEach(order => {
+          const customerId = order.customerId;
+          if (customerId) {
+            orderCountByCustomer[customerId] = (orderCountByCustomer[customerId] || 0) + 1;
+          }
+        });
+        console.log('CustomerPage - Order count by customer:', orderCountByCustomer);
+
+        // Filter by agencyId and transform API data
+        const transformedCustomers = customersData
+          .filter(customer => {
+            const match = customer.agencyId == agencyId;
+            console.log(`Customer ${customer.id}: agencyId=${customer.agencyId}, match=${match}`);
+            return match;
+          })
+          .map(customer => ({
+            id: customer.id,
+            customer_code: `KH${customer.id.toString().padStart(4, '0')}`,
+            full_name: customer.fullName,
+            phone: customer.phone,
+            email: customer.email,
+            address: customer.address,
+            class: customer.class || 'Thường',
+            agencyId: customer.agencyId,
+            created_at: customer.createAt,
+            total_quotations: 0, // Can be calculated if needed
+            total_orders: orderCountByCustomer[customer.id] || 0,
+            total_test_drives: 0,
+            total_feedback: 0,
+            status: 'active' // Default status
+          }));
+
+        console.log('CustomerPage - Transformed customers:', transformedCustomers);
         setCustomers(transformedCustomers);
       } catch (error) {
         console.error('Error fetching customers:', error);
@@ -86,7 +121,7 @@ const CustomerPage = () => {
     };
 
     fetchCustomers();
-  }, []);
+  }, [getAgencyId]);
 
   // Get customer status info
   const getStatusInfo = (status) => {
@@ -118,7 +153,13 @@ const CustomerPage = () => {
   const handleEdit = (record) => {
     setSelectedCustomer(record);
     setModalMode('edit');
-    form.setFieldsValue(record);
+    form.setFieldsValue({
+      full_name: record.full_name,
+      phone: record.phone,
+      email: record.email,
+      address: record.address,
+      class: record.class
+    });
     setIsModalOpen(true);
   };
 
@@ -183,10 +224,17 @@ const CustomerPage = () => {
   };
 
   // Process pending submit after email verification
-  const processPendingSubmit = async () => {
+  const processPendingSubmit = async (formData = null) => {
     try {
+      const dataToSubmit = formData || pendingFormData;
+      
+      if (!dataToSubmit) {
+        message.error('Không có dữ liệu để lưu');
+        return;
+      }
+
       if (modalMode === 'create') {
-        const newCustomer = await customerAPI.create(pendingFormData);
+        const newCustomer = await customerAPI.create(dataToSubmit);
 
         const transformedCustomer = {
           id: newCustomer.id,
@@ -195,6 +243,8 @@ const CustomerPage = () => {
           phone: newCustomer.phone,
           email: newCustomer.email,
           address: newCustomer.address,
+          class: newCustomer.class || 'Thường',
+          agencyId: newCustomer.agencyId,
           created_at: newCustomer.createAt || new Date().toISOString(),
           total_quotations: 0,
           total_orders: 0,
@@ -206,16 +256,32 @@ const CustomerPage = () => {
         setCustomers([...customers, transformedCustomer]);
         message.success('Đã tạo hồ sơ khách hàng mới');
       } else if (modalMode === 'edit') {
-        await customerAPI.update(selectedCustomer.id, pendingFormData);
+        // Convert to FormData for multipart/form-data
+        const formData = new FormData();
+        formData.append('FullName', dataToSubmit.fullName);
+        formData.append('Email', dataToSubmit.email);
+        formData.append('Phone', dataToSubmit.phone);
+        formData.append('Address', dataToSubmit.address);
+        formData.append('AgencyId', dataToSubmit.agencyId.toString());
+        formData.append('Class', dataToSubmit.class);
+
+        console.log('Updating customer with FormData:');
+        for (let pair of formData.entries()) {
+          console.log(pair[0] + ': ' + pair[1]);
+        }
+
+        await customerAPI.update(selectedCustomer.id, formData);
 
         setCustomers(customers.map(c => 
           c.id === selectedCustomer.id 
             ? { 
                 ...c, 
-                full_name: pendingFormData.fullName,
-                email: pendingFormData.email,
-                phone: pendingFormData.phone,
-                address: pendingFormData.address
+                full_name: dataToSubmit.fullName,
+                email: dataToSubmit.email,
+                phone: dataToSubmit.phone,
+                address: dataToSubmit.address,
+                class: dataToSubmit.class,
+                agencyId: dataToSubmit.agencyId
               } 
             : c
         ));
@@ -239,19 +305,38 @@ const CustomerPage = () => {
     try {
       const values = await form.validateFields();
       
+      const agencyId = getAgencyId();
+      if (!agencyId) {
+        message.error('Không tìm thấy thông tin đại lý');
+        return;
+      }
+      
       // Prepare customer payload matching API schema
       const customerPayload = {
         fullName: values.full_name,
         email: values.email,
         phone: values.phone,
         address: values.address,
-        class: "string" // Default value as per API schema
+        // For edit mode, use existing agencyId; for create mode, use current agencyId
+        agencyId: parseInt(modalMode === 'edit' ? selectedCustomer.agencyId : agencyId),
+        class: values.class || "Thường" // Mặc định là Thường
       };
 
-      // Store pending data and show verification modal
+      // Check if email changed (for edit mode)
+      const emailChanged = modalMode === 'edit' && selectedCustomer.email !== values.email;
+      
+      // Store pending data
       setPendingFormData(customerPayload);
-      setEmailToVerify(values.email);
-      setIsVerifyModalOpen(true);
+      
+      // Only require OTP verification if creating new customer or email changed
+      if (modalMode === 'create' || emailChanged) {
+        // Show verification modal
+        setEmailToVerify(values.email);
+        setIsVerifyModalOpen(true);
+      } else {
+        // Email not changed, proceed directly with data
+        await processPendingSubmit(customerPayload);
+      }
       
     } catch (error) {
       console.error('Validation failed:', error);
@@ -295,7 +380,7 @@ const CustomerPage = () => {
       title: 'Địa chỉ',
       dataIndex: 'address',
       key: 'address',
-      width: 250,
+      width: 200,
       ellipsis: true,
       render: (text) => (
         <>
@@ -305,18 +390,32 @@ const CustomerPage = () => {
       )
     },
     {
-      title: 'Hoạt động',
-      key: 'activities',
-      width: 180,
-      render: (_, record) => (
-        <div>
-          <div><Text type="secondary">Báo giá: </Text><Text strong>{record.total_quotations}</Text></div>
-          <div><Text type="secondary">Đơn hàng: </Text><Text strong>{record.total_orders}</Text></div>
-          <div><Text type="secondary">Lái thử: </Text><Text strong>{record.total_test_drives}</Text></div>
-        </div>
+      title: 'Hạng KH',
+      dataIndex: 'class',
+      key: 'class',
+      width: 120,
+      render: (classType) => {
+        const classMap = {
+          'Thường': { color: 'default', text: 'Thường' },
+          'VIP': { color: 'gold', text: 'VIP' },
+          'Kim Cương': { color: 'purple', text: 'Kim Cương' }
+        };
+        const info = classMap[classType] || classMap['Thường'];
+        return <Tag color={info.color}>{info.text}</Tag>;
+      }
+    },
+    {
+      title: 'Số đơn',
+      dataIndex: 'total_orders',
+      key: 'total_orders',
+      width: 90,
+      align: 'center',
+      render: (count) => (
+        <Tag color={count > 0 ? 'blue' : 'default'}>
+          {count}
+        </Tag>
       )
     },
-    
     {
       title: 'Ngày tạo',
       dataIndex: 'created_at',
@@ -502,6 +601,11 @@ const CustomerPage = () => {
               <Descriptions.Item label="Địa chỉ" span={2}>
                 <EnvironmentOutlined /> {selectedCustomer.address}
               </Descriptions.Item>
+              <Descriptions.Item label="Hạng khách hàng">
+                <Tag color={selectedCustomer.class === 'Kim Cương' ? 'purple' : selectedCustomer.class === 'VIP' ? 'gold' : 'default'}>
+                  {selectedCustomer.class || 'Thường'}
+                </Tag>
+              </Descriptions.Item>
               <Descriptions.Item label="Trạng thái">
                 <Tag color={getStatusInfo(selectedCustomer.status).color}>
                   {getStatusInfo(selectedCustomer.status).text}
@@ -512,7 +616,7 @@ const CustomerPage = () => {
               </Descriptions.Item>
             </Descriptions>
 
-            <Card title={<><HistoryOutlined /> Thống kê hoạt động</>} size="small">
+            <Card title={<><HistoryOutlined /> Thống kê hoạt động</>} size="small" style={{ marginBottom: '24px' }}>
               <Row gutter={16}>
                 <Col span={6}>
                   <Statistic title="Báo giá" value={selectedCustomer.total_quotations} />
@@ -528,6 +632,67 @@ const CustomerPage = () => {
                 </Col>
               </Row>
             </Card>
+
+            {/* Customer Orders */}
+            {selectedCustomer.total_orders > 0 && (
+              <Card title="Lịch sử đơn hàng" size="small">
+                <Table
+                  dataSource={orders.filter(order => order.customerId === selectedCustomer.id)}
+                  rowKey="id"
+                  pagination={false}
+                  size="small"
+                  columns={[
+                    {
+                      title: 'Mã đơn',
+                      dataIndex: 'id',
+                      key: 'id',
+                      width: 100,
+                      render: (id) => <Text code>ORD{id}</Text>
+                    },
+                    {
+                      title: 'Ngày đặt',
+                      dataIndex: 'orderDate',
+                      key: 'orderDate',
+                      width: 120,
+                      render: (date) => dayjs(date).format('DD/MM/YYYY')
+                    },
+                    {
+                      title: 'Tổng tiền',
+                      dataIndex: 'totalAmount',
+                      key: 'totalAmount',
+                      width: 130,
+                      render: (amount) => (
+                        <Text strong style={{ color: '#f5222d' }}>
+                          {new Intl.NumberFormat('vi-VN', {
+                            style: 'currency',
+                            currency: 'VND'
+                          }).format(amount)}
+                        </Text>
+                      )
+                    },
+                    {
+                      title: 'Trạng thái',
+                      dataIndex: 'status',
+                      key: 'status',
+                      width: 130,
+                      render: (status) => {
+                        const statusMap = {
+                          'pending': { color: 'default', text: 'Chờ xử lý' },
+                          'processing': { color: 'processing', text: 'Đang xử lý' },
+                          'partial-ready': { color: 'warning', text: 'Đã cọc' },
+                          'paid': { color: 'success', text: 'Đã thanh toán' },
+                          'pending-payment': { color: 'orange', text: 'Chờ thanh toán' },
+                          'completed': { color: 'success', text: 'Hoàn thành' },
+                          'cancelled': { color: 'error', text: 'Đã hủy' }
+                        };
+                        const info = statusMap[status?.toLowerCase()] || statusMap['pending'];
+                        return <Tag color={info.color}>{info.text}</Tag>;
+                      }
+                    }
+                  ]}
+                />
+              </Card>
+            )}
           </>
         ) : (
           <Form
@@ -579,6 +744,20 @@ const CustomerPage = () => {
                     rows={2}
                     placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố"
                   />
+                </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Form.Item
+                  name="class"
+                  label="Hạng khách hàng"
+                  initialValue="Thường"
+                  rules={[{ required: true, message: 'Chọn hạng khách hàng' }]}
+                >
+                  <Select placeholder="Chọn hạng khách hàng">
+                    <Select.Option value="Thường">Thường</Select.Option>
+                    <Select.Option value="VIP">VIP</Select.Option>
+                    <Select.Option value="Kim Cương">Kim Cương</Select.Option>
+                  </Select>
                 </Form.Item>
               </Col>
             </Row>

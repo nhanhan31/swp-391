@@ -53,7 +53,7 @@ const { Title, Text } = Typography;
 const { Step } = Steps;
 
 const OrderPage = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isDealerManager, isDealerStaff } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -99,7 +99,7 @@ const OrderPage = () => {
         const ordersData = await orderAPI.getByAgencyId(agencyId);
         console.log('OrderPage - Orders data received:', ordersData);
 
-        // Transform API data to match component structure
+        // Transform API data first to get quotation info
         const transformedOrders = await Promise.all(
           ordersData.map(async (order) => {
             try {
@@ -142,6 +142,7 @@ const OrderPage = () => {
                 order_code: `ORD${order.id.toString().padStart(4, '0')}`,
                 quotation_code: quotationCode,
                 quotation_id: quotation?.id,
+                quotation_createBy: quotation?.createBy, // Add quotation createBy for filtering
                 customer_name: customer.fullName || 'N/A',
                 customer_phone: customer.phone || 'N/A',
                 customer_email: customer.email || 'N/A',
@@ -163,8 +164,20 @@ const OrderPage = () => {
           })
         );
 
-        setOrders(transformedOrders.filter(order => order !== null));
-        console.log('OrderPage - Transformed orders:', transformedOrders.filter(order => order !== null));
+        // Filter orders based on role - using quotation's createBy
+        let filteredOrders = transformedOrders.filter(order => order !== null);
+        
+        if (isDealerStaff()) {
+          // Staff: Only show orders where quotation was created by themselves
+          // Use loose equality (==) to handle string/number type mismatch
+          filteredOrders = filteredOrders.filter(order => 
+            order.quotation_createBy == currentUser?.id
+          );
+        } else if (isDealerManager()) {
+          // Manager: Show all orders
+        }
+
+        setOrders(filteredOrders);
       } catch (error) {
         console.error('Error fetching orders:', error);
         message.error('Không thể tải danh sách đơn hàng');

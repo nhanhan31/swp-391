@@ -31,9 +31,12 @@ import {
   EditOutlined,
   PlusOutlined,
   MoreOutlined,
-  UploadOutlined
+  UploadOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
+import dayjs from 'dayjs';
+import { vehiclePriceAPI } from '../services/quotationService';
 
 const ALLOCATION_API = 'https://allocation.agencymanagement.online/api';
 
@@ -41,13 +44,17 @@ const { Title, Text } = Typography;
 
 const VehicleManagementPage = () => {
   const [form] = Form.useForm();
+  const [optionForm] = Form.useForm();
   const [selectedModelId, setSelectedModelId] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isOptionModalOpen, setIsOptionModalOpen] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState(null);
+  const [selectedOption, setSelectedOption] = useState(null);
   const [loading, setLoading] = useState(false);
   const [vehicleOptions, setVehicleOptions] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [modalMode, setModalMode] = useState('view'); // 'view', 'create', 'edit'
+  const [optionModalMode, setOptionModalMode] = useState('view');
   const [vehicleImageFile, setVehicleImageFile] = useState(null);
 
   // Fetch VehicleOptions
@@ -90,10 +97,6 @@ const VehicleManagementPage = () => {
     return vehicleOptions.map(model => {
       const variants = vehicles.filter(v => v.vehicleOptionId === model.id);
       const colors = [...new Set(variants.map(v => v.color))];
-      const featureHighlights = variants.flatMap(variant => 
-        variant.features ? variant.features.split(', ') : []
-      );
-      const uniqueFeatures = [...new Set(featureHighlights)].slice(0, 5);
 
       return {
         id: model.id,
@@ -102,32 +105,29 @@ const VehicleManagementPage = () => {
         variant_count: variants.length,
         colors,
         variants,
-        uniqueFeatures,
-        created_at: model.createdAt,
-        updated_at: model.updatedAt
+        created_at: model.createAt,
+        updated_at: model.updateAt
       };
     });
   }, [vehicleOptions, vehicles]);
 
   const variantData = useMemo(() => {
     return vehicles.map(variant => {
-      const model = vehicleOptions.find(option => option.id === variant.vehicleOptionId);
       return {
         id: variant.id,
         variant_name: variant.variantName,
-        model_name: model?.modelName || 'N/A',
+        model_name: variant.option?.modelName || 'N/A',
+        description: variant.option?.description || 'N/A',
         vehicle_option_id: variant.vehicleOptionId,
         color: variant.color,
         battery_capacity: variant.batteryCapacity,
         range_km: variant.rangeKM,
         features: variant.features,
         status: variant.status,
-        image_url: variant.vehicleImage,
-        created_at: variant.createdAt,
-        updated_at: variant.updatedAt
+        image_url: variant.vehicleImage
       };
     });
-  }, [vehicleOptions, vehicles]);
+  }, [vehicles]);
 
   const filteredVariants = selectedModelId === 'all'
     ? variantData
@@ -152,6 +152,79 @@ const VehicleManagementPage = () => {
     setIsModalOpen(true);
   };
 
+  const handleCreateOption = () => {
+    setOptionModalMode('create');
+    setSelectedOption(null);
+    optionForm.resetFields();
+    setIsOptionModalOpen(true);
+  };
+
+  const handleEditOption = (record) => {
+    setOptionModalMode('edit');
+    setSelectedOption(record);
+    optionForm.setFieldsValue({
+      modelName: record.model_name,
+      description: record.description
+    });
+    setIsOptionModalOpen(true);
+  };
+
+  const handleDeleteOption = async (id) => {
+    Modal.confirm({
+      title: 'Xác nhận xóa',
+      content: 'Bạn có chắc chắn muốn xóa dòng xe này? Tất cả phiên bản liên quan sẽ không thể truy cập.',
+      okText: 'Xóa',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await axios.delete(`${ALLOCATION_API}/VehicleOption/${id}`, {
+            headers: {
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          });
+          message.success('Xóa dòng xe thành công');
+          const response = await axios.get(`${ALLOCATION_API}/VehicleOption`);
+          setVehicleOptions(response.data || []);
+        } catch (error) {
+          console.error('Error deleting option:', error);
+          message.error('Không thể xóa dòng xe');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
+  const handleDeleteVehicle = async (id) => {
+    Modal.confirm({
+      title: 'Xác nhận xóa',
+      content: 'Bạn có chắc chắn muốn xóa phiên bản xe này?',
+      okText: 'Xóa',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await axios.delete(`${ALLOCATION_API}/Vehicle/${id}`, {
+            headers: {
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          });
+          message.success('Xóa phiên bản thành công');
+          const response = await axios.get(`${ALLOCATION_API}/Vehicle`);
+          setVehicles(response.data || []);
+        } catch (error) {
+          console.error('Error deleting vehicle:', error);
+          message.error('Không thể xóa phiên bản');
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
   const handleEdit = (record) => {
     setModalMode('edit');
     setSelectedVariant(record);
@@ -162,7 +235,8 @@ const VehicleManagementPage = () => {
       batteryCapacity: record.battery_capacity,
       rangeKM: record.range_km,
       features: record.features,
-      status: record.status
+      status: record.status,
+      currentImageUrl: record.image_url
     });
     setVehicleImageFile(null);
     setIsModalOpen(true);
@@ -187,17 +261,42 @@ const VehicleManagementPage = () => {
         formData.append('Features', values.features);
         formData.append('Status', values.status || 'Active');
 
-        await axios.post(`${ALLOCATION_API}/Vehicle`, formData, {
+        const vehicleResponse = await axios.post(`${ALLOCATION_API}/Vehicle`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
           }
         });
 
-        message.success('Tạo xe thành công');
+        const newVehicleId = vehicleResponse.data.id;
+        const startDate = dayjs().format('YYYY-MM-DDTHH:mm:ss.SSS[Z]');
+        const endDate = dayjs().add(1, 'year').format('YYYY-MM-DDTHH:mm:ss.SSS[Z]');
+
+        // Tạo giá MSRP
+        await vehiclePriceAPI.create({
+          vehicleId: newVehicleId,
+          agencyId: 1,
+          priceType: 'MSRP',
+          priceAmount: values.msrpPrice,
+          startDate: startDate,
+          endDate: endDate
+        });
+
+        // Tạo giá Wholesale
+        await vehiclePriceAPI.create({
+          vehicleId: newVehicleId,
+          agencyId: 1,
+          priceType: 'Wholesale',
+          priceAmount: values.wholesalePrice,
+          startDate: startDate,
+          endDate: endDate
+        });
+
+        message.success('Tạo xe và bảng giá thành công');
       } else if (modalMode === 'edit') {
         formData.append('VehicleOptionId', values.vehicleOptionId);
         formData.append('VariantName', values.variantName);
+        // Chỉ gửi ảnh mới nếu đã chọn file
         if (vehicleImageFile) {
           formData.append('VehicleImage', vehicleImageFile);
         }
@@ -227,6 +326,42 @@ const VehicleManagementPage = () => {
     } catch (error) {
       console.error('Error submitting vehicle:', error);
       message.error('Không thể lưu thông tin xe');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitOption = async () => {
+    try {
+      const values = await optionForm.validateFields();
+      setLoading(true);
+
+      if (optionModalMode === 'create') {
+        await axios.post(`${ALLOCATION_API}/VehicleOption`, values, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+        message.success('Tạo dòng xe thành công');
+      } else if (optionModalMode === 'edit') {
+        await axios.put(`${ALLOCATION_API}/VehicleOption/${selectedOption.id}`, values, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        });
+        message.success('Cập nhật dòng xe thành công');
+      }
+
+      const response = await axios.get(`${ALLOCATION_API}/VehicleOption`);
+      setVehicleOptions(response.data || []);
+      
+      optionForm.resetFields();
+      setIsOptionModalOpen(false);
+    } catch (error) {
+      console.error('Error submitting option:', error);
+      message.error('Không thể lưu thông tin dòng xe');
     } finally {
       setLoading(false);
     }
@@ -263,18 +398,12 @@ const VehicleManagementPage = () => {
       )
     },
     {
-      title: 'Tính năng nổi bật',
-      dataIndex: 'uniqueFeatures',
-      key: 'uniqueFeatures',
+      title: 'Mô tả',
+      dataIndex: 'description',
+      key: 'description',
       width: 320,
-      render: (features) => (
-        <Space size={[0, 8]} wrap>
-          {features.map(feature => (
-            <Tag key={feature} icon={<ThunderboltOutlined />} color="gold">
-              {feature}
-            </Tag>
-          ))}
-        </Space>
+      render: (text) => (
+        <Text>{text}</Text>
       )
     },
     {
@@ -292,11 +421,12 @@ const VehicleManagementPage = () => {
               setSelectedVariant({
                 variant_name: record.model_name,
                 model_name: record.model_name,
-                features: record.uniqueFeatures.join(', '),
+                description: record.description,
                 color: record.colors.join(', '),
                 battery_capacity: record.variants[0]?.battery_capacity || 'Đang cập nhật',
                 range_km: record.variants[0]?.range_km || 0
               });
+              setModalMode('view');
               setIsModalOpen(true);
             }
           },
@@ -304,7 +434,14 @@ const VehicleManagementPage = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Chỉnh sửa',
-            onClick: () => {}
+            onClick: () => handleEditOption(record)
+          },
+          {
+            key: 'delete',
+            icon: <DeleteOutlined />,
+            label: 'Xóa',
+            danger: true,
+            onClick: () => handleDeleteOption(record.id)
           }
         ];
 
@@ -319,11 +456,24 @@ const VehicleManagementPage = () => {
 
   const variantColumns = [
     {
+      title: 'Hình ảnh',
+      dataIndex: 'image_url',
+      key: 'image_url',
+      width: 100,
+      fixed: 'left',
+      render: (imageUrl) => (
+        <img 
+          src={imageUrl || 'https://via.placeholder.com/80x60?text=No+Image'} 
+          alt="Vehicle" 
+          style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 4 }}
+        />
+      )
+    },
+    {
       title: 'Phiên bản',
       dataIndex: 'variant_name',
       key: 'variant_name',
       width: 220,
-      fixed: 'left',
       render: (text) => <Text strong>{text}</Text>
     },
     {
@@ -363,19 +513,11 @@ const VehicleManagementPage = () => {
       )
     },
     {
-      title: 'Tính năng',
-      dataIndex: 'features',
-      key: 'features',
+      title: 'Mô tả',
+      dataIndex: 'description',
+      key: 'description',
       width: 320,
-      render: (features) => (
-        <Space size={[0, 8]} wrap>
-          {features.split(', ').map(feature => (
-            <Tag key={feature} icon={<SettingOutlined />}>
-              {feature}
-            </Tag>
-          ))}
-        </Space>
-      )
+      render: (text) => <Text>{text}</Text>
     },
     {
       title: 'Trạng thái',
@@ -405,6 +547,13 @@ const VehicleManagementPage = () => {
             icon: <EditOutlined />,
             label: 'Chỉnh sửa',
             onClick: () => handleEdit(record)
+          },
+          {
+            key: 'delete',
+            icon: <DeleteOutlined />,
+            label: 'Xóa',
+            danger: true,
+            onClick: () => handleDeleteVehicle(record.id)
           }
         ];
 
@@ -476,7 +625,11 @@ const VehicleManagementPage = () => {
         </Col>
       </Row>
 
-      <Card title="Danh sách dòng xe" style={{ marginBottom: '24px' }}>
+      <Card title="Danh sách dòng xe" style={{ marginBottom: '24px' }} extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateOption}>
+          Thêm dòng xe mới
+        </Button>
+      }>
         <Table
           columns={modelColumns}
           dataSource={modelData}
@@ -498,7 +651,7 @@ const VehicleManagementPage = () => {
               <Select.Option value="all">Tất cả dòng xe</Select.Option>
               {vehicleOptions.map(option => (
                 <Select.Option key={option.id} value={option.id}>
-                  {option.model_name}
+                  {option.modelName}
                 </Select.Option>
               ))}
             </Select>
@@ -550,6 +703,15 @@ const VehicleManagementPage = () => {
             <Descriptions.Item label="Phiên bản" span={2}>
               <Text strong>{selectedVariant.variant_name}</Text>
             </Descriptions.Item>
+            {selectedVariant.image_url && (
+              <Descriptions.Item label="Hình ảnh" span={2}>
+                <img 
+                  src={selectedVariant.image_url} 
+                  alt="Vehicle" 
+                  style={{ width: '100%', maxWidth: 400, height: 'auto', borderRadius: 8 }}
+                />
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="Dòng xe">
               {selectedVariant.model_name}
             </Descriptions.Item>
@@ -562,8 +724,8 @@ const VehicleManagementPage = () => {
             <Descriptions.Item label="Tầm hoạt động">
               {selectedVariant.range_km} km
             </Descriptions.Item>
-            <Descriptions.Item label="Tính năng" span={2}>
-              {selectedVariant.features}
+            <Descriptions.Item label="Mô tả" span={2}>
+              {selectedVariant.description || selectedVariant.features}
             </Descriptions.Item>
             <Descriptions.Item label="Trạng thái">
               <Badge status={selectedVariant.status === 'Active' ? 'success' : 'warning'} 
@@ -596,9 +758,28 @@ const VehicleManagementPage = () => {
               <Input placeholder="VD: VF8 Plus" />
             </Form.Item>
 
+            <Form.Item name="currentImageUrl" hidden>
+              <Input />
+            </Form.Item>
+
+            {modalMode === 'edit' && form.getFieldValue('currentImageUrl') && (
+              <Form.Item label="Hình ảnh hiện tại">
+                <img 
+                  src={form.getFieldValue('currentImageUrl')} 
+                  alt="Current Vehicle" 
+                  style={{ width: '100%', maxWidth: 300, height: 'auto', borderRadius: 8, marginBottom: 8 }}
+                />
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                    Tải ảnh mới ở dưới để thay thế (nếu không chọn ảnh mới, ảnh cũ sẽ được giữ nguyên)
+                  </Text>
+                </div>
+              </Form.Item>
+            )}
+
             <Form.Item
               name="vehicleImage"
-              label="Hình ảnh xe"
+              label={modalMode === 'edit' ? 'Thay đổi hình ảnh (không bắt buộc)' : 'Hình ảnh xe'}
             >
               <Upload
                 beforeUpload={(file) => {
@@ -654,6 +835,42 @@ const VehicleManagementPage = () => {
               <Input.TextArea rows={3} placeholder="VD: Hệ thống lái tự động, Camera 360, Sạc nhanh" />
             </Form.Item>
 
+            {modalMode === 'create' && (
+              <>
+                <Form.Item
+                  name="msrpPrice"
+                  label="Giá niêm yết (MSRP) - VNĐ"
+                  rules={[{ required: true, message: 'Vui lòng nhập giá niêm yết' }]}
+                >
+                  <InputNumber
+                    min={0}
+                    max={10000000000}
+                    step={1000000}
+                    style={{ width: '100%' }}
+                    formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                    placeholder="VD: 1,250,000,000"
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  name="wholesalePrice"
+                  label="Giá sỉ (Wholesale) - VNĐ"
+                  rules={[{ required: true, message: 'Vui lòng nhập giá sỉ' }]}
+                >
+                  <InputNumber
+                    min={0}
+                    max={10000000000}
+                    step={1000000}
+                    style={{ width: '100%' }}
+                    formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                    placeholder="VD: 1,150,000,000"
+                  />
+                </Form.Item>
+              </>
+            )}
+
             <Form.Item
               name="status"
               label="Trạng thái"
@@ -665,6 +882,46 @@ const VehicleManagementPage = () => {
             </Form.Item>
           </Form>
         )}
+      </Modal>
+
+      <Modal
+        title={
+          <Space>
+            <AppstoreOutlined />
+            <span>
+              {optionModalMode === 'create' ? 'Thêm dòng xe mới' : 'Chỉnh sửa dòng xe'}
+            </span>
+          </Space>
+        }
+        open={isOptionModalOpen}
+        onCancel={() => setIsOptionModalOpen(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setIsOptionModalOpen(false)}>
+            Hủy
+          </Button>,
+          <Button key="submit" type="primary" onClick={handleSubmitOption}>
+            {optionModalMode === 'create' ? 'Tạo mới' : 'Cập nhật'}
+          </Button>
+        ]}
+        width={600}
+      >
+        <Form form={optionForm} layout="vertical">
+          <Form.Item
+            name="modelName"
+            label="Tên dòng xe"
+            rules={[{ required: true, message: 'Vui lòng nhập tên dòng xe' }]}
+          >
+            <Input placeholder="VD: Aura Sedan 2025" />
+          </Form.Item>
+
+          <Form.Item
+            name="description"
+            label="Mô tả"
+            rules={[{ required: true, message: 'Vui lòng nhập mô tả' }]}
+          >
+            <Input.TextArea rows={3} placeholder="VD: Sedan điện 5 chỗ, sang trọng, tập trung vào phạm vi hoạt động xa." />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
     </Spin>

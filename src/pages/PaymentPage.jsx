@@ -22,7 +22,8 @@ import {
   Select,
   DatePicker,
   Input,
-  Alert
+  Alert,
+  Empty
 } from 'antd';
 import {
   DollarOutlined,
@@ -34,7 +35,8 @@ import {
   FileTextOutlined,
   WalletOutlined,
   CloseCircleOutlined,
-  DollarCircleOutlined
+  DollarCircleOutlined,
+  HistoryOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { paymentAPI, installmentAPI, orderAPI, contractAPI } from '../services/quotationService';
@@ -55,6 +57,9 @@ const PaymentPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isStraightPaymentModalOpen, setIsStraightPaymentModalOpen] = useState(false);
+  const [isTransactionHistoryModalOpen, setIsTransactionHistoryModalOpen] = useState(false);
+  const [transactionHistory, setTransactionHistory] = useState([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [form] = Form.useForm();
   const [straightPaymentForm] = Form.useForm();
   const [paymentPreview, setPaymentPreview] = useState(null);
@@ -101,6 +106,23 @@ const PaymentPage = () => {
     fetchData();
   }, [currentUser, isDealerManager, getAgencyId]);
 
+  // Handle view transaction history
+  const handleViewTransactionHistory = async (record) => {
+    setSelectedPayment(record);
+    setIsTransactionHistoryModalOpen(true);
+    setLoadingTransactions(true);
+    try {
+      const transactions = await paymentAPI.getTransactionHistory(record.id);
+      setTransactionHistory(transactions || []);
+    } catch (error) {
+      console.error('Error fetching transaction history:', error);
+      message.error('Không thể tải lịch sử giao dịch');
+      setTransactionHistory([]);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
   // Handle straight payment
   const handleStraightPayment = (record) => {
     setSelectedPayment(record);
@@ -119,6 +141,7 @@ const PaymentPage = () => {
     try {
       const values = await straightPaymentForm.validateFields();
       
+      // PUT API to update payment status to Completed
       await paymentAPI.update(selectedPayment.id, {
         prepay: values.prepay,
         amount: values.amount,
@@ -384,10 +407,14 @@ const PaymentPage = () => {
                   orderStatus = 'Paid';
                 }
               } else if (paymentPercentage >= 10) {
+                if (matchingOrder.status === 'Pending-Payment') {
+                  orderStatus = 'Pending-Payment';
+                } else {
+                  orderStatus = 'Partial-Ready';
+                }
                 // Trả đủ 10% principalAmount (không trừ deposit) → Partial-Ready
-                orderStatus = 'Partial-Ready';
               } else if (paymentPercentage > 0) {
-                orderStatus = 'Partial';
+                orderStatus = 'Paying';
               }
 
               if (orderStatus) {
@@ -664,19 +691,30 @@ const PaymentPage = () => {
       title: 'Thao tác',
       key: 'actions',
       fixed: 'right',
-      width: 120,
+      width: 180,
       align: 'center',
       render: (_, record) => (
-        record.status === 'Pending' && (
-          <Button
-            type="primary"
-            size="small"
-            icon={<DollarCircleOutlined />}
-            onClick={() => handleStraightPayment(record)}
-          >
-            Thanh toán
-          </Button>
-        )
+        <Space>
+          {record.status === 'Pending' && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<DollarCircleOutlined />}
+              onClick={() => handleStraightPayment(record)}
+            >
+              Thanh toán
+            </Button>
+          )}
+          {record.status === 'Completed' && (
+            <Button
+              size="small"
+              icon={<HistoryOutlined />}
+              onClick={() => handleViewTransactionHistory(record)}
+            >
+              Lịch sử GD
+            </Button>
+          )}
+        </Space>
       )
     }
   ];
@@ -1283,6 +1321,126 @@ const PaymentPage = () => {
               <Input />
             </Form.Item>
           </Form>
+        </Modal>
+
+        {/* Transaction History Modal */}
+        <Modal
+          title={`Lịch sử giao dịch - ${selectedPayment ? `PAY${selectedPayment.id.toString().padStart(6, '0')}` : ''}`}
+          open={isTransactionHistoryModalOpen}
+          onCancel={() => {
+            setIsTransactionHistoryModalOpen(false);
+            setTransactionHistory([]);
+          }}
+          footer={[
+            <Button key="close" type="primary" onClick={() => setIsTransactionHistoryModalOpen(false)}>
+              Đóng
+            </Button>
+          ]}
+          width={900}
+        >
+          <Spin spinning={loadingTransactions}>
+            {selectedPayment && (
+              <>
+                {/* Payment Info */}
+                <Card style={{ marginBottom: '24px', background: '#f0f5ff' }}>
+                  <Descriptions bordered column={2}>
+                    <Descriptions.Item label="Mã thanh toán">
+                      PAY{selectedPayment.id.toString().padStart(6, '0')}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Mã đơn hàng">
+                      ORD{selectedPayment.orderId?.toString().padStart(4, '0')}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Tổng giá trị">
+                      <Text strong>{formatPrice(selectedPayment.amount)}</Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Tiền trả trước">
+                      <Text style={{ color: '#52c41a' }}>{formatPrice(selectedPayment.prepay || 0)}</Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Phương thức">
+                      <Tag color="green">{selectedPayment.paymentMethod}</Tag>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Trạng thái">
+                      <Tag
+                        icon={getPaymentStatusInfo(selectedPayment.status).icon}
+                        color={getPaymentStatusInfo(selectedPayment.status).color}
+                      >
+                        {getPaymentStatusInfo(selectedPayment.status).text}
+                      </Tag>
+                    </Descriptions.Item>
+                  </Descriptions>
+                </Card>
+
+                {/* Transaction Timeline */}
+                <Card title={`Lịch sử giao dịch (${transactionHistory.length})`}>
+                  {transactionHistory.length > 0 ? (
+                    <Timeline>
+                      {transactionHistory.map((transaction) => (
+                        <Timeline.Item
+                          key={transaction.id}
+                          color={transaction.status === 'Success' ? 'green' : 'blue'}
+                        >
+                          <div style={{ marginBottom: '12px' }}>
+                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                              <div>
+                                <Text strong style={{ fontSize: '14px' }}>
+                                  {dayjs(transaction.transactionDate).format('DD/MM/YYYY HH:mm:ss')}
+                                </Text>
+                                <Tag color="blue" style={{ marginLeft: '8px' }}>
+                                  ID: {transaction.id}
+                                </Tag>
+                              </div>
+                              
+                              {transaction.installmentPlanId && (
+                                <div>
+                                  <Text type="secondary">Mã kế hoạch trả góp: </Text>
+                                  <Text code>IP{transaction.installmentPlanId.toString().padStart(4, '0')}</Text>
+                                </div>
+                              )}
+
+                              {transaction.transactionCode && (
+                                <div>
+                                  <Text type="secondary">Mã giao dịch: </Text>
+                                  <Text code>{transaction.transactionCode}</Text>
+                                </div>
+                              )}
+
+                              <div>
+                                <Text type="secondary">Số tiền: </Text>
+                                <Text strong style={{ color: '#52c41a', fontSize: '16px' }}>
+                                  {formatPrice(transaction.amount)}
+                                </Text>
+                              </div>
+
+                              <div>
+                                <Text type="secondary">Trạng thái: </Text>
+                                <Tag color={transaction.status === 'Success' ? 'success' : 'processing'}>
+                                  {transaction.status}
+                                </Tag>
+                              </div>
+
+                              <div>
+                                <Text type="secondary">Ngày tạo: </Text>
+                                <Text>{dayjs(transaction.createAt).format('DD/MM/YYYY HH:mm')}</Text>
+                              </div>
+
+                              {transaction.updateAt && (
+                                <div>
+                                  <Text type="secondary">Cập nhật: </Text>
+                                  <Text>{dayjs(transaction.updateAt).format('DD/MM/YYYY HH:mm')}</Text>
+                                </div>
+                              )}
+                            </Space>
+                          </div>
+                        </Timeline.Item>
+                      ))}
+                    </Timeline>
+                  ) : (
+                    <Empty description="Chưa có giao dịch nào" />
+                  )}
+                </Card>
+              </>
+            )}
+          </Spin>
         </Modal>
       </div>
     </Spin>

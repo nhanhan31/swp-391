@@ -46,7 +46,10 @@ const AgencyTargetPage = () => {
   
   const [targetList, setTargetList] = useState([]);
   const [agencies, setAgencies] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(dayjs().year());
+  const [selectedMonth, setSelectedMonth] = useState(dayjs().month() + 1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'view'
   const [selectedTarget, setSelectedTarget] = useState(null);
@@ -57,17 +60,23 @@ const AgencyTargetPage = () => {
     return currentUser?.role === 'EVStaff' || currentUser?.role === 'Admin';
   };
 
-  // Fetch agencies
+  // Fetch agencies and vehicles
   useEffect(() => {
-    const fetchAgencies = async () => {
+    const fetchData = async () => {
       try {
-        const agenciesData = await agencyAPI.getAll();
+        const [agenciesData, vehiclesResponse] = await Promise.all([
+          agencyAPI.getAll(),
+          axios.get('https://allocation.agencymanagement.online/api/Vehicle', {
+            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+          })
+        ]);
         setAgencies(agenciesData || []);
+        setVehicles(vehiclesResponse.data || []);
       } catch (error) {
-        console.error('Error fetching agencies:', error);
+        console.error('Error fetching data:', error);
       }
     };
-    fetchAgencies();
+    fetchData();
   }, []);
 
   // Fetch targets and auto-update achievedSales
@@ -83,18 +92,20 @@ const AgencyTargetPage = () => {
           // EVStaff & Admin: Get all targets
           const response = await axios.get(`${AGENCY_API}/AgencyTarget/targets`, {
             params: {
-              TargetYear: dayjs().year(),
-              TargetMonth: dayjs().month() + 1
-            }
+              TargetYear: selectedYear,
+              TargetMonth: selectedMonth
+            },
+            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
           });
           targetsData = response.data || [];
         } else if (isDealerManager() && agencyId) {
           // AgencyManager: Get targets for this agency only
           const response = await axios.get(`${AGENCY_API}/AgencyTarget/Agency/${agencyId}/target`, {
             params: {
-              TargetYear: dayjs().year(),
-              TargetMonth: dayjs().month() + 1
-            }
+              TargetYear: selectedYear,
+              TargetMonth: selectedMonth
+            },
+            headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
           });
           targetsData = Array.isArray(response.data) ? response.data : [response.data];
         }
@@ -158,13 +169,16 @@ const AgencyTargetPage = () => {
     };
 
     fetchTargets();
-  }, [currentUser, isDealerManager, getAgencyId]);
+  }, [currentUser, isDealerManager, getAgencyId, selectedYear, selectedMonth]);
 
   const targetData = useMemo(() => {
     return targetList.map(target => {
       const agency = agencies.find(a => a.id === target.agencyId);
-      const achievementRate = target.targetSales > 0 
-        ? Math.round((target.achievedSales / target.targetSales) * 100) 
+      const vehicle = vehicles.find(v => v.id === target.vehicleId);
+      const targetUnits = target.targetUnits || 0;
+      const achievedUnits = target.achievedUnits || 0;
+      const achievementRate = targetUnits > 0 
+        ? Math.round((achievedUnits / targetUnits) * 100) 
         : 0;
       
       let status = 'in_progress';
@@ -183,20 +197,24 @@ const AgencyTargetPage = () => {
         target_id: target.id,
         agency_id: target.agencyId,
         agency_name: agency?.agencyName || 'Chưa xác định',
-        agency_location: agency?.location || '',
+        agency_location: agency?.address || '',
+        vehicle_name: vehicle?.variantName || 'N/A',
+        vehicle_model: vehicle?.option?.modelName || '',
+        vehicle_color: vehicle?.color || '',
         target_year: target.targetYear,
         target_month: target.targetMonth,
-        target_sales: target.targetSales,
-        achieved_sales: target.achievedSales,
-        remaining_sales: target.targetSales - target.achievedSales,
+        target_sales: targetUnits,
+        achieved_sales: achievedUnits,
+        remaining_sales: targetUnits - achievedUnits,
         achievement_rate: achievementRate,
-        status
+        status,
+        vehicle_id: target.vehicleId
       };
     }).sort((a, b) => {
       if (a.target_year !== b.target_year) return b.target_year - a.target_year;
       return b.target_month - a.target_month;
     });
-  }, [targetList, agencies]);
+  }, [targetList, agencies, vehicles]);
 
   const totalTargets = targetData.length;
   const completedTargets = targetData.filter(t => t.status === 'completed').length;
@@ -250,10 +268,10 @@ const AgencyTargetPage = () => {
         }
 
         const createData = {
+          vehicleId: values.vehicle_id,
           targetYear: values.target_year,
           targetMonth: values.target_month,
-          targetSales: values.target_sales,
-          achievedSales: 0 // Always start with 0
+          targetUnits: values.target_sales
         };
 
         await axios.post(
@@ -272,19 +290,18 @@ const AgencyTargetPage = () => {
         // Refresh data
         window.location.reload();
       } else if (modalMode === 'edit') {
-        const updateData = {
-          targetYear: values.target_year,
-          targetMonth: values.target_month,
-          targetSales: values.target_sales,
-          achievedSales: values.achieved_sales || 0
-        };
+        const formData = new FormData();
+        formData.append('VehicleId', values.vehicle_id);
+        formData.append('TargetYear', values.target_year);
+        formData.append('TargetMonth', values.target_month);
+        formData.append('TargetUnits', values.target_sales);
 
         await axios.put(
           `${AGENCY_API}/AgencyTarget/Agency/${selectedTarget.agency_id}/target?targetId=${selectedTarget.target_id}`,
-          updateData,
+          formData,
           {
             headers: {
-              'Content-Type': 'application/json',
+              'Content-Type': 'multipart/form-data',
               'Authorization': `Bearer ${sessionStorage.getItem('token')}`
             }
           }
@@ -332,6 +349,24 @@ const AgencyTargetPage = () => {
           <Text strong>{text}</Text>
           <br />
           <Text type="secondary" style={{ fontSize: '12px' }}>{record.agency_location}</Text>
+        </div>
+      )
+    },
+    {
+      title: 'Mẫu xe',
+      key: 'vehicle',
+      width: 200,
+      render: (_, record) => (
+        <div>
+          <Text strong>{record.vehicle_name}</Text>
+          {record.vehicle_color && (
+            <>
+              <br />
+              <Tag color="blue">{record.vehicle_color}</Tag>
+            </>
+          )}
+          <br />
+          <Text type="secondary" style={{ fontSize: '12px' }}>{record.vehicle_model}</Text>
         </div>
       )
     },
@@ -447,6 +482,49 @@ const AgencyTargetPage = () => {
           )}
         </div>
 
+      {/* Filter Controls */}
+      <Card style={{ marginBottom: '24px' }}>
+        <Row gutter={16} align="middle">
+          <Col>
+            <Text strong>Lọc theo kỳ:</Text>
+          </Col>
+          <Col>
+            <Select
+              value={selectedYear}
+              onChange={setSelectedYear}
+              style={{ width: 120 }}
+              suffixIcon={<CalendarOutlined />}
+            >
+              {[2023, 2024, 2025, 2026, 2027].map(year => (
+                <Select.Option key={year} value={year}>{year}</Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col>
+            <Select
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              style={{ width: 140 }}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+                <Select.Option key={month} value={month}>Tháng {month}</Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col>
+            <Button 
+              type="primary"
+              onClick={() => {
+                setSelectedYear(dayjs().year());
+                setSelectedMonth(dayjs().month() + 1);
+              }}
+            >
+              Kỳ hiện tại
+            </Button>
+          </Col>
+        </Row>
+      </Card>
+
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
           <Card>
@@ -526,6 +604,21 @@ const AgencyTargetPage = () => {
                 {' - '}
                 <Text type="secondary">{selectedTarget.agency_location}</Text>
               </Descriptions.Item>
+              <Descriptions.Item label="Mẫu xe">
+                <Text strong>{selectedTarget.vehicle_name}</Text>
+                {selectedTarget.vehicle_color && (
+                  <>
+                    {' - '}
+                    <Tag color="blue">{selectedTarget.vehicle_color}</Tag>
+                  </>
+                )}
+                {selectedTarget.vehicle_model && (
+                  <>
+                    <br />
+                    <Text type="secondary">{selectedTarget.vehicle_model}</Text>
+                  </>
+                )}
+              </Descriptions.Item>
               <Descriptions.Item label="Kỳ">
                 Tháng {selectedTarget.target_month}/{selectedTarget.target_year}
               </Descriptions.Item>
@@ -571,12 +664,26 @@ const AgencyTargetPage = () => {
                 <Select placeholder="Chọn đại lý" suffixIcon={<ShopOutlined />}>
                   {agencies.map(agency => (
                     <Select.Option key={agency.id} value={agency.id}>
-                      {agency.agency_name} - {agency.location}
+                      {agency.agencyName}
                     </Select.Option>
                   ))}
                 </Select>
               </Form.Item>
             )}
+
+            <Form.Item
+              name="vehicle_id"
+              label="Mẫu xe"
+              rules={[{ required: true, message: 'Vui lòng chọn mẫu xe' }]}
+            >
+              <Select placeholder="Chọn mẫu xe">
+                {vehicles.map(vehicle => (
+                  <Select.Option key={vehicle.id} value={vehicle.id}>
+                    {vehicle.variantName} {vehicle.color ? `- ${vehicle.color}` : ''} ({vehicle.option?.modelName || 'N/A'})
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
 
             <Row gutter={16}>
               <Col span={12}>
@@ -585,8 +692,11 @@ const AgencyTargetPage = () => {
                   label="Năm"
                   rules={[{ required: true, message: 'Vui lòng chọn năm' }]}
                 >
-                  <Select placeholder="Chọn năm">
-                    {[2023, 2024, 2025, 2026].map(year => (
+                  <Select 
+                    placeholder="Chọn năm"
+                    onChange={() => form.setFieldsValue({ target_month: undefined })}
+                  >
+                    {Array.from({ length: 3 }, (_, i) => dayjs().year() + i).map(year => (
                       <Select.Option key={year} value={year}>{year}</Select.Option>
                     ))}
                   </Select>
@@ -594,15 +704,33 @@ const AgencyTargetPage = () => {
               </Col>
               <Col span={12}>
                 <Form.Item
-                  name="target_month"
-                  label="Tháng"
-                  rules={[{ required: true, message: 'Vui lòng chọn tháng' }]}
+                  noStyle
+                  shouldUpdate={(prevValues, currentValues) => prevValues.target_year !== currentValues.target_year}
                 >
-                  <Select placeholder="Chọn tháng">
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                      <Select.Option key={month} value={month}>Tháng {month}</Select.Option>
-                    ))}
-                  </Select>
+                  {({ getFieldValue }) => {
+                    const selectedYear = getFieldValue('target_year');
+                    const currentYear = dayjs().year();
+                    const currentMonth = dayjs().month() + 1;
+                    
+                    return (
+                      <Form.Item
+                        name="target_month"
+                        label="Tháng"
+                        rules={[{ required: true, message: 'Vui lòng chọn tháng' }]}
+                      >
+                        <Select placeholder="Chọn tháng">
+                          {Array.from({ length: 12 }, (_, i) => i + 1)
+                            .filter(month => {
+                              if (!selectedYear || selectedYear > currentYear) return true;
+                              return month >= currentMonth;
+                            })
+                            .map(month => (
+                              <Select.Option key={month} value={month}>Tháng {month}</Select.Option>
+                            ))}
+                        </Select>
+                      </Form.Item>
+                    );
+                  }}
                 </Form.Item>
               </Col>
             </Row>

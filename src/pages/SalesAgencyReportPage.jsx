@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Row,
@@ -9,7 +9,9 @@ import {
   Table,
   Tag,
   Progress,
-  Avatar
+  Avatar,
+  Spin,
+  message
 } from 'antd';
 import {
   ShopOutlined,
@@ -21,85 +23,97 @@ import {
 } from '@ant-design/icons';
 import { Column, Line } from '@ant-design/plots';
 import dayjs from 'dayjs';
-import { agencies } from '../data/mockData';
+import axios from 'axios';
+import { orderAPI } from '../services/quotationService';
 
 const { Title, Text } = Typography;
 
-// Mock sales data by agency
-const mockAgencySales = [
-  // VinFast Hà Nội
-  { agency_id: 1, month: 'T1', sales: 45, revenue: 51300000000, target: 50 },
-  { agency_id: 1, month: 'T2', sales: 52, revenue: 59280000000, target: 50 },
-  { agency_id: 1, month: 'T3', sales: 48, revenue: 54720000000, target: 50 },
-  { agency_id: 1, month: 'T4', sales: 55, revenue: 62700000000, target: 55 },
-  { agency_id: 1, month: 'T5', sales: 60, revenue: 68400000000, target: 55 },
-  { agency_id: 1, month: 'T6', sales: 58, revenue: 66120000000, target: 55 },
-  { agency_id: 1, month: 'T7', sales: 62, revenue: 70680000000, target: 60 },
-  { agency_id: 1, month: 'T8', sales: 65, revenue: 74100000000, target: 60 },
-  { agency_id: 1, month: 'T9', sales: 70, revenue: 79800000000, target: 65 },
-  { agency_id: 1, month: 'T10', sales: 68, revenue: 77520000000, target: 65 },
-
-  // VinFast TP.HCM
-  { agency_id: 2, month: 'T1', sales: 52, revenue: 59280000000, target: 55 },
-  { agency_id: 2, month: 'T2', sales: 58, revenue: 66120000000, target: 55 },
-  { agency_id: 2, month: 'T3', sales: 55, revenue: 62700000000, target: 55 },
-  { agency_id: 2, month: 'T4', sales: 60, revenue: 68400000000, target: 60 },
-  { agency_id: 2, month: 'T5', sales: 65, revenue: 74100000000, target: 60 },
-  { agency_id: 2, month: 'T6', sales: 63, revenue: 71820000000, target: 60 },
-  { agency_id: 2, month: 'T7', sales: 68, revenue: 77520000000, target: 65 },
-  { agency_id: 2, month: 'T8', sales: 72, revenue: 82080000000, target: 65 },
-  { agency_id: 2, month: 'T9', sales: 75, revenue: 85500000000, target: 70 },
-  { agency_id: 2, month: 'T10', sales: 78, revenue: 88920000000, target: 70 },
-
-  // VinFast Đà Nẵng
-  { agency_id: 3, month: 'T1', sales: 25, revenue: 28500000000, target: 30 },
-  { agency_id: 3, month: 'T2', sales: 28, revenue: 31920000000, target: 30 },
-  { agency_id: 3, month: 'T3', sales: 30, revenue: 34200000000, target: 30 },
-  { agency_id: 3, month: 'T4', sales: 32, revenue: 36480000000, target: 35 },
-  { agency_id: 3, month: 'T5', sales: 35, revenue: 39900000000, target: 35 },
-  { agency_id: 3, month: 'T6', sales: 33, revenue: 37620000000, target: 35 },
-  { agency_id: 3, month: 'T7', sales: 38, revenue: 43320000000, target: 40 },
-  { agency_id: 3, month: 'T8', sales: 40, revenue: 45600000000, target: 40 },
-  { agency_id: 3, month: 'T9', sales: 42, revenue: 47880000000, target: 45 },
-  { agency_id: 3, month: 'T10', sales: 45, revenue: 51300000000, target: 45 }
-];
+const AGENCY_API_URL = 'https://agency.agencymanagement.online/api';
 
 const SalesAgencyReportPage = () => {
   const [selectedAgency, setSelectedAgency] = useState('all');
   const [selectedPeriod, setSelectedPeriod] = useState('year');
+  const [loading, setLoading] = useState(false);
+  const [agencies, setAgencies] = useState([]);
+  const [orders, setOrders] = useState([]);
 
-  // Calculate statistics
-  const statistics = useMemo(() => {
-    const filteredData = selectedAgency === 'all'
-      ? mockAgencySales
-      : mockAgencySales.filter(item => item.agency_id === parseInt(selectedAgency));
+  // Fetch data from API
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [agenciesResponse, ordersData] = await Promise.all([
+          axios.get(`${AGENCY_API_URL}/Agency`, {
+            headers: {
+              'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+            }
+          }),
+          orderAPI.getAll()
+        ]);
 
-    // Group by agency
-    const byAgency = mockAgencySales.reduce((acc, item) => {
-      const agency = agencies.find(a => a.id === item.agency_id);
-      const key = agency?.agency_name || 'Unknown';
-      
-      if (!acc[key]) {
-        acc[key] = {
-          agency_id: item.agency_id,
-          agency_name: key,
-          location: agency?.location || '',
-          sales: 0,
-          revenue: 0,
-          target: 0
-        };
+        setAgencies(agenciesResponse.data || []);
+        setOrders(ordersData || []);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        message.error('Không thể tải dữ liệu báo cáo');
+      } finally {
+        setLoading(false);
       }
-      acc[key].sales += item.sales;
-      acc[key].revenue += item.revenue;
-      acc[key].target += item.target;
+    };
+
+    fetchData();
+  }, []);
+
+  // Calculate statistics from real data
+  const statistics = useMemo(() => {
+    if (!agencies.length || !orders.length) {
+      return {
+        totalSales: 0,
+        totalRevenue: 0,
+        totalTarget: 0,
+        overallAchievementRate: 0,
+        agencyStats: []
+      };
+    }
+
+    // Filter orders by selected agency
+    const filteredOrders = selectedAgency === 'all'
+      ? orders
+      : orders.filter(order => order.agencyId === parseInt(selectedAgency));
+
+    // Group orders by agency
+    const byAgency = agencies.reduce((acc, agency) => {
+      const agencyOrders = orders.filter(order => order.agencyId === agency.id);
+      
+      // Count completed/delivered orders as sales
+      const sales = agencyOrders.filter(order => 
+        order.status?.toLowerCase() === 'completed' || 
+        order.status?.toLowerCase() === 'delivered'
+      ).length;
+
+      // Sum revenue from all orders
+      const revenue = agencyOrders.reduce((sum, order) => {
+        return sum + (order.totalAmount || 0);
+      }, 0);
+
+      // Get target from agency data or calculate based on history
+      const target = agency.salesTarget || Math.ceil(sales / 0.85); // Assume 85% achievement
+
+      acc[agency.id] = {
+        agency_id: agency.id,
+        agency_name: agency.agencyName || 'N/A',
+        location: agency.address || 'N/A',
+        sales,
+        revenue,
+        target,
+        achievementRate: target > 0 ? Math.round((sales / target) * 100) : 0,
+        avgSalesPerMonth: Math.round(sales / 12) // Assuming year data
+      };
+
       return acc;
     }, {});
 
-    const agencyStats = Object.values(byAgency).map(item => ({
-      ...item,
-      achievementRate: Math.round((item.sales / item.target) * 100),
-      avgSalesPerMonth: Math.round(item.sales / 10)
-    })).sort((a, b) => b.sales - a.sales);
+    const agencyStats = Object.values(byAgency).sort((a, b) => b.sales - a.sales);
 
     const totalSales = agencyStats.reduce((sum, item) => sum + item.sales, 0);
     const totalRevenue = agencyStats.reduce((sum, item) => sum + item.revenue, 0);
@@ -109,25 +123,57 @@ const SalesAgencyReportPage = () => {
       totalSales,
       totalRevenue,
       totalTarget,
-      overallAchievementRate: Math.round((totalSales / totalTarget) * 100),
+      overallAchievementRate: totalTarget > 0 ? Math.round((totalSales / totalTarget) * 100) : 0,
       agencyStats
     };
-  }, [selectedAgency]);
+  }, [selectedAgency, agencies, orders]);
 
-  // Data for charts
+  // Data for charts - Group orders by month
   const chartData = useMemo(() => {
-    const data = selectedAgency === 'all'
-      ? mockAgencySales
-      : mockAgencySales.filter(item => item.agency_id === parseInt(selectedAgency));
+    if (!agencies.length || !orders.length) {
+      return [];
+    }
 
-    return data.map(item => {
-      const agency = agencies.find(a => a.id === item.agency_id);
-      return {
-        ...item,
-        agency_name: agency?.agency_name || 'Unknown'
-      };
+    const filteredOrders = selectedAgency === 'all'
+      ? orders
+      : orders.filter(order => order.agencyId === parseInt(selectedAgency));
+
+    // Group by agency and month
+    const monthlyData = {};
+    
+    filteredOrders.forEach(order => {
+      if (!order.orderDate) return;
+      
+      const month = dayjs(order.orderDate).format('T-M');
+      const monthNum = dayjs(order.orderDate).month() + 1;
+      const agencyId = order.agencyId;
+      const agency = agencies.find(a => a.id === agencyId);
+      
+      if (!agency) return;
+
+      const key = `${agencyId}-${monthNum}`;
+      
+      if (!monthlyData[key]) {
+        monthlyData[key] = {
+          agency_id: agencyId,
+          agency_name: agency.agencyName || 'N/A',
+          month: `T${monthNum}`,
+          monthNum,
+          sales: 0,
+          revenue: 0,
+          target: Math.ceil((agency.salesTarget || 60) / 12) // Monthly target
+        };
+      }
+
+      // Count completed orders as sales
+      if (order.status?.toLowerCase() === 'completed' || order.status?.toLowerCase() === 'delivered') {
+        monthlyData[key].sales += 1;
+      }
+      monthlyData[key].revenue += (order.totalAmount || 0);
     });
-  }, [selectedAgency]);
+
+    return Object.values(monthlyData).sort((a, b) => a.monthNum - b.monthNum);
+  }, [selectedAgency, agencies, orders]);
 
   // Column chart config
   const columnConfig = {
@@ -275,39 +321,40 @@ const SalesAgencyReportPage = () => {
   ];
 
   return (
-    <div className="sales-agency-report-page">
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={2}>
-            <ShopOutlined /> Báo cáo doanh số theo đại lý
-          </Title>
-          <Text type="secondary">Phân tích hiệu suất và xếp hạng các đại lý</Text>
+    <Spin spinning={loading}>
+      <div className="sales-agency-report-page">
+        <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={2}>
+              <ShopOutlined /> Báo cáo doanh số theo đại lý
+            </Title>
+            <Text type="secondary">Phân tích hiệu suất và xếp hạng các đại lý</Text>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Select
+              value={selectedAgency}
+              onChange={setSelectedAgency}
+              style={{ width: 200 }}
+              options={[
+                { value: 'all', label: 'Tất cả đại lý' },
+                ...agencies.map(agency => ({
+                  value: agency.id.toString(),
+                  label: agency.agencyName
+                }))
+              ]}
+            />
+            <Select
+              value={selectedPeriod}
+              onChange={setSelectedPeriod}
+              style={{ width: 150 }}
+              options={[
+                { value: 'month', label: 'Theo tháng' },
+                { value: 'quarter', label: 'Theo quý' },
+                { value: 'year', label: 'Theo năm' }
+              ]}
+            />
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <Select
-            value={selectedAgency}
-            onChange={setSelectedAgency}
-            style={{ width: 200 }}
-            options={[
-              { value: 'all', label: 'Tất cả đại lý' },
-              ...agencies.map(agency => ({
-                value: agency.id.toString(),
-                label: agency.agency_name
-              }))
-            ]}
-          />
-          <Select
-            value={selectedPeriod}
-            onChange={setSelectedPeriod}
-            style={{ width: 150 }}
-            options={[
-              { value: 'month', label: 'Theo tháng' },
-              { value: 'quarter', label: 'Theo quý' },
-              { value: 'year', label: 'Theo năm' }
-            ]}
-          />
-        </div>
-      </div>
 
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
@@ -369,15 +416,16 @@ const SalesAgencyReportPage = () => {
         </Col>
       </Row>
 
-      <Card title="Bảng xếp hạng đại lý">
-        <Table
-          columns={columns}
-          dataSource={statistics.agencyStats}
-          rowKey="agency_id"
-          pagination={false}
-        />
-      </Card>
-    </div>
+        <Card title="Bảng xếp hạng đại lý">
+          <Table
+            columns={columns}
+            dataSource={statistics.agencyStats}
+            rowKey="agency_id"
+            pagination={false}
+          />
+        </Card>
+      </div>
+    </Spin>
   );
 };
 

@@ -15,8 +15,7 @@ import {
   InputNumber,
   message,
   Descriptions,
-  Spin,
-  Checkbox
+  Spin
 } from 'antd';
 import {
   ShoppingCartOutlined,
@@ -46,7 +45,6 @@ const AgencyOrderPage = () => {
   const [form] = Form.useForm();
   const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
   const [orderVehicles, setOrderVehicles] = useState([]);
-  const [selectedVehicles, setSelectedVehicles] = useState([]);
 
   // Fetch data
   useEffect(() => {
@@ -117,7 +115,6 @@ const AgencyOrderPage = () => {
       console.log('Order allocations:', allocations);
       
       setOrderVehicles(allocations || []);
-      setSelectedVehicles([]);
       setIsReceiveModalOpen(true);
     } catch (error) {
       console.error('Error fetching order vehicles:', error);
@@ -130,33 +127,26 @@ const AgencyOrderPage = () => {
   // Handle confirm receive vehicles
   const handleConfirmReceive = async () => {
     try {
-      if (selectedVehicles.length === 0) {
-        message.warning('Vui lòng chọn ít nhất 1 xe để nhập kho');
+      if (orderVehicles.length === 0) {
+        message.warning('Không có xe để nhập kho');
         return;
       }
 
       setLoading(true);
 
-      // Import selected vehicles to agency inventory
-      for (const allocationId of selectedVehicles) {
-        const allocation = orderVehicles.find(a => a.id === allocationId);
-        if (allocation) {
-          await agencyInventoryAPI.addToInventory(currentUser.agency.id, {
-            vehicleInstanceId: allocation.vehicleInstanceId
-          });
-        }
+      // Import all vehicles to agency inventory
+      for (const allocation of orderVehicles) {
+        await agencyInventoryAPI.addToInventory(currentUser.agency.id, {
+          vehicleInstanceId: allocation.vehicleInstanceId
+        });
       }
 
-      // Check if all vehicles are received
-      if (selectedVehicles.length === orderVehicles.length) {
-        // Update order status to Completed
-        await agencyOrderAPI.update(selectedOrder.id, {
-          status: 'Completed'
-        });
-        message.success('Đã nhập kho toàn bộ xe và hoàn thành đơn hàng!');
-      } else {
-        message.success(`Đã nhập kho ${selectedVehicles.length} xe`);
-      }
+      // Update order status to Completed
+      await agencyOrderAPI.update(selectedOrder.id, {
+        status: 'Completed'
+      });
+      
+      message.success(`Đã nhập kho toàn bộ ${orderVehicles.length} xe và hoàn thành đơn hàng!`);
 
       setIsReceiveModalOpen(false);
       
@@ -496,23 +486,24 @@ const AgencyOrderPage = () => {
             key="submit" 
             type="primary" 
             onClick={handleConfirmReceive}
-            disabled={selectedVehicles.length === 0}
+            loading={loading}
           >
-            Nhập kho ({selectedVehicles.length} xe)
+            Nhập kho toàn bộ ({orderVehicles.length} xe)
           </Button>
         ]}
       >
         <div style={{ marginBottom: 16 }}>
           <Text strong>Số lượng xe: </Text>
           <Tag color="blue">{orderVehicles.length} xe</Tag>
+          <div style={{ marginTop: 8, padding: 8, background: '#e6f7ff', borderRadius: 4 }}>
+            <Text type="secondary" style={{ fontSize: '13px' }}>
+              ℹ️ Tất cả xe sẽ được nhập kho cùng lúc khi bạn xác nhận
+            </Text>
+          </div>
         </div>
         
         <Table
           size="small"
-          rowSelection={{
-            selectedRowKeys: selectedVehicles,
-            onChange: (keys) => setSelectedVehicles(keys)
-          }}
           columns={[
             {
               title: 'STT',

@@ -22,7 +22,8 @@ import {
   Dropdown,
   DatePicker,
   InputNumber,
-  Spin
+  Spin,
+  Image
 } from 'antd';
 import {
   FileProtectOutlined,
@@ -76,6 +77,12 @@ const ContractPage = () => {
   const [installmentPeriodsPerYear, setInstallmentPeriodsPerYear] = useState(null);
   const [depositAmount, setDepositAmount] = useState(0);
 
+  // Sign contract modal
+  const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+  const [contractImageFile, setContractImageFile] = useState(null);
+  const [contractImageUrl, setContractImageUrl] = useState(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+
   // Fetch contracts from API
   useEffect(() => {
     const fetchContracts = async () => {
@@ -127,24 +134,34 @@ const ContractPage = () => {
         );
 
         // Transform API data to match component structure
-        const transformedContracts = contractsWithDetails.map(c => ({
-          id: c.id,
-          contract_code: c.contractNumber,
-          quotation_id: c.quotationId,
-          quotation_code: c.quotation ? `QT${c.quotation.id.toString().padStart(6, '0')}` : 'N/A',
-          customer_name: c.customer?.fullName || 'N/A',
-          customer_phone: c.customer?.phone || 'N/A',
-          customer_email: c.customer?.email || 'N/A',
-          customer_address: c.customer?.address || 'N/A',
-          vehicle_name: c.quotation?.vehicle?.variantName || 'N/A',
-          vehicle_model: c.quotation?.vehicle?.modelName || 'N/A',
-          total_amount: c.quotation?.quotedPrice || 0,
-          contract_date: c.contractDate,
-          contract_name: c.contractName,
-          terms: c.terms,
-          status: c.status?.toLowerCase() || 'pending',
-          created_at: c.contractDate
-        }));
+        let transformedContracts = contractsWithDetails
+          .filter(c => c.quotation !== null) // Chỉ lấy contracts có quotation
+          .map(c => ({
+            id: c.id,
+            contract_code: c.contractNumber,
+            quotation_id: c.quotationId,
+            quotation_code: c.quotation ? `QT${c.quotation.id.toString().padStart(6, '0')}` : 'N/A',
+            quotation_createBy: c.quotation?.createBy,
+            customer_name: c.customer?.fullName || 'N/A',
+            customer_phone: c.customer?.phone || 'N/A',
+            customer_email: c.customer?.email || 'N/A',
+            customer_address: c.customer?.address || 'N/A',
+            vehicle_name: c.quotation?.vehicle?.variantName || 'N/A',
+            vehicle_model: c.quotation?.vehicle?.modelName || 'N/A',
+            total_amount: c.quotation?.quotedPrice || 0,
+            contract_date: c.contractDate,
+            contract_name: c.contractName,
+            terms: c.terms,
+            status: c.status?.toLowerCase() || 'pending',
+            created_at: c.contractDate
+          }));
+
+        // Filter by role: Staff chỉ xem contracts từ quotation họ tạo
+        if (isDealerStaff()) {
+          transformedContracts = transformedContracts.filter(
+            contract => contract.quotation_createBy == currentUser?.id
+          );
+        }
 
         setContracts(transformedContracts);
       } catch (error) {
@@ -156,7 +173,7 @@ const ContractPage = () => {
     };
 
     fetchContracts();
-  }, [currentUser, getAgencyId]);
+  }, [currentUser, getAgencyId, isDealerStaff, isDealerManager]);
 
   const formatPrice = (price) => {
     return new Intl.NumberFormat('vi-VN', {
@@ -185,47 +202,78 @@ const ContractPage = () => {
     setIsModalOpen(true);
   };
 
-  // Handle sign contract
-  const handleSign = async (id) => {
-    Modal.confirm({
-      title: 'Xác nhận ký hợp đồng',
-      content: 'Bạn xác nhận đã ký hợp đồng với khách hàng?',
-      okText: 'Xác nhận',
-      cancelText: 'Hủy',
-      onOk: async () => {
-        try {
-          const contract = contracts.find(c => c.id === id);
-          if (!contract) {
-            message.error('Không tìm thấy hợp đồng');
-            return;
-          }
+  // Handle sign contract - open upload modal
+  const handleSign = (record) => {
+    setSelectedContract(record);
+    setContractImageFile(null);
+    setContractImageUrl(null);
+    setIsSignModalOpen(true);
+  };
 
-          // Call API to update contract status
-          await contractAPI.update(id, {
-            ContractName: contract.contract_name,
-            ContractDate: contract.contract_date,
-            Terms: contract.terms,
-            Status: 'Signed'
-          });
-
-          // Update local state
-          setContracts(contracts.map(c => 
-            c.id === id 
-              ? { 
-                  ...c, 
-                  status: 'signed',
-                  signed_date: new Date().toISOString()
-                }
-              : c
-          ));
-          
-          message.success('Đã ký hợp đồng thành công');
-        } catch (error) {
-          console.error('Error signing contract:', error);
-          message.error('Không thể ký hợp đồng. Vui lòng thử lại!');
-        }
+  // Handle image upload change
+  const handleImageChange = (info) => {
+    // Lấy file từ fileList của Ant Design Upload
+    if (info.fileList && info.fileList.length > 0) {
+      const file = info.fileList[0].originFileObj || info.fileList[0];
+      
+      if (file && file instanceof File) {
+        setContractImageFile(file);
+        
+        // Create preview URL
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setContractImageUrl(e.target.result);
+        };
+        reader.readAsDataURL(file);
       }
-    });
+    } else {
+      // Nếu xóa file
+      setContractImageFile(null);
+      setContractImageUrl(null);
+    }
+  };
+
+  // Submit sign contract with image
+  const handleSubmitSign = async () => {
+    if (!contractImageFile) {
+      message.error('Vui lòng tải lên ảnh hợp đồng đã ký!');
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      
+      const formData = new FormData();
+      formData.append('ContractName', selectedContract.contract_name);
+      formData.append('ContractDate', selectedContract.contract_date);
+      formData.append('Terms', selectedContract.terms || '');
+      formData.append('Status', 'Signed');
+      formData.append('ContractImageUrl', contractImageFile);
+
+      await contractAPI.update(selectedContract.id, formData);
+
+      // Update local state
+      setContracts(contracts.map(c => 
+        c.id === selectedContract.id 
+          ? { 
+              ...c, 
+              status: 'signed',
+              signed_date: new Date().toISOString(),
+              contract_image_url: contractImageUrl
+            }
+          : c
+      ));
+      
+      message.success('Đã ký hợp đồng thành công!');
+      setIsSignModalOpen(false);
+      setContractImageFile(null);
+      setContractImageUrl(null);
+    } catch (error) {
+      console.error('Error signing contract:', error);
+      message.error('Không thể ký hợp đồng. Vui lòng thử lại!');
+    } finally {
+      setUploadLoading(false);
+    }
   };
 
   // Handle payment
@@ -363,7 +411,7 @@ const ContractPage = () => {
           PRepay: values.prepay || 0,
           Amount: values.amount,
           PaymentMethod: 'Trả thẳng',
-          Status: values.status
+          Status: 'Pending'
         };
 
         console.log('Creating payment (Trả thẳng):', paymentPayload);
@@ -427,11 +475,18 @@ const ContractPage = () => {
         Status: 'Completed'
       });
 
-      // Update order status to 'Completed' as well
+      // Update order status based on prepay/deposit
       if (values.orderId && values.orderId !== 0) {
         try {
-          await orderAPI.update(values.orderId, 'Paying');
-          console.log('Updated order status to Paying for orderId:', values.orderId);
+          // Determine order status: Partial-Ready if has prepay/deposit, otherwise Paying
+          const hasPrepayOrDeposit = paymentMethod === 'Trả thẳng' 
+            ? (values.prepay && values.prepay > 0)
+            : (depositAmount && depositAmount > 0);
+          
+          const orderStatus = hasPrepayOrDeposit ? 'Partial-Ready' : 'Paying';
+          
+          await orderAPI.update(values.orderId, orderStatus);
+          console.log(`Updated order status to ${orderStatus} for orderId:`, values.orderId);
         } catch (error) {
           console.error('Error updating order status:', error);
           // Continue even if order update fails
@@ -566,64 +621,46 @@ const ContractPage = () => {
   };
 
   // Send contract via email
-  const handleSendEmail = async () => {
-    if (!contractPreviewRef.current || !selectedContract) {
+  const handleSendEmail = async (record) => {
+    if (!record) {
       message.error('Không có hợp đồng để gửi');
       return;
     }
 
-    try {
-      message.loading('Đang tạo và gửi email...', 0);
+    Modal.confirm({
+      title: 'Gửi hợp đồng qua Email',
+      content: `Bạn có muốn gửi hợp đồng đến email: ${record.customer_email}?`,
+      okText: 'Gửi',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          message.loading('Đang gửi email...', 0);
 
-      // Clone element để không ảnh hưởng UI
-      const originalElement = contractPreviewRef.current;
-      const clonedElement = originalElement.cloneNode(true);
-      
-      // Style cho element clone
-      clonedElement.style.position = 'absolute';
-      clonedElement.style.left = '-9999px';
-      clonedElement.style.top = '0';
-      clonedElement.style.maxHeight = 'none';
-      clonedElement.style.overflow = 'visible';
-      clonedElement.style.width = originalElement.offsetWidth + 'px';
-      
-      // Thêm vào DOM
-      document.body.appendChild(clonedElement);
+          // If contract has image, send that; otherwise generate from preview
+          if (record.contract_image_url) {
+            // Send existing contract image
+            const response = await fetch(record.contract_image_url);
+            const blob = await response.blob();
+            
+            const formData = new FormData();
+            formData.append('file', blob, `HopDong_${record.id}.png`);
 
-      // Chờ một chút để đảm bảo render xong
-      await new Promise(resolve => setTimeout(resolve, 100));
+            await contractAPI.sendEmail(record.id, record.customer_email, formData);
+          } else {
+            message.destroy();
+            message.error('Hợp đồng chưa có hình ảnh để gửi!');
+            return;
+          }
 
-      const canvas = await html2canvas(clonedElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: clonedElement.scrollWidth,
-        windowHeight: clonedElement.scrollHeight
-      });
-
-      // Xóa element clone
-      document.body.removeChild(clonedElement);
-
-      // Convert canvas to blob
-      const blob = await new Promise(resolve => {
-        canvas.toBlob(resolve, 'image/png');
-      });
-
-      // Create FormData to send file (chỉ cần file, contractId và email đã ở URL)
-      const formData = new FormData();
-      formData.append('file', blob, `HopDong_${selectedContract.contract_code}.png`);
-
-      // Call API to send email
-      const response = await contractAPI.sendEmail(selectedContract.id, selectedContract.customer_email, formData);
-
-      message.destroy();
-      message.success('Đã gửi hợp đồng qua email thành công!');
-    } catch (error) {
-      message.destroy();
-      console.error('Error sending email:', error);
-      message.error('Không thể gửi email. Vui lòng thử lại!');
-    }
+          message.destroy();
+          message.success('Đã gửi hợp đồng qua email thành công!');
+        } catch (error) {
+          message.destroy();
+          console.error('Error sending email:', error);
+          message.error('Không thể gửi email. Vui lòng thử lại!');
+        }
+      }
+    });
   };
 
   // Handle create contract
@@ -755,6 +792,24 @@ const ContractPage = () => {
       render: (date) => dayjs(date).format('DD/MM/YYYY')
     },
     {
+      title: 'Hình ảnh',
+      dataIndex: 'contract_image_url',
+      key: 'contract_image_url',
+      width: 100,
+      align: 'center',
+      render: (url) => url ? (
+        <Image 
+          src={url} 
+          alt="Contract" 
+          width={50} 
+          height={50} 
+          style={{ objectFit: 'cover', borderRadius: '4px' }}
+        />
+      ) : (
+        <Text type="secondary">Chưa ký</Text>
+      )
+    },
+    {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
@@ -790,7 +845,16 @@ const ContractPage = () => {
             key: 'sign',
             icon: <FileProtectOutlined />,
             label: 'Ký hợp đồng',
-            onClick: () => handleSign(record.id)
+            onClick: () => handleSign(record)
+          });
+        }
+
+        if (record.status === 'signed' || record.status === 'paying' || record.status === 'completed') {
+          items.push({
+            key: 'sendEmail',
+            icon: <MailOutlined />,
+            label: 'Gửi Email',
+            onClick: () => handleSendEmail(record)
           });
         }
 
@@ -1700,6 +1764,76 @@ const ContractPage = () => {
             )}
           </Form>
         )}
+      </Modal>
+
+      {/* Sign Contract Modal */}
+      <Modal
+        title="Ký Hợp Đồng"
+        open={isSignModalOpen}
+        onCancel={() => {
+          setIsSignModalOpen(false);
+          setContractImageFile(null);
+          setContractImageUrl(null);
+        }}
+        footer={[
+          <Button key="cancel" onClick={() => setIsSignModalOpen(false)}>
+            Hủy
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={uploadLoading}
+            onClick={handleSubmitSign}
+          >
+            Xác Nhận Ký
+          </Button>
+        ]}
+        width={600}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <Alert
+            message="Tải lên hình ảnh hợp đồng đã ký"
+            description="Vui lòng tải lên ảnh chụp hoặc scan hợp đồng đã có chữ ký của khách hàng."
+            type="info"
+            showIcon
+            style={{ marginBottom: 20 }}
+          />
+
+          <Upload
+            listType="picture-card"
+            maxCount={1}
+            beforeUpload={() => false}
+            onChange={handleImageChange}
+            onRemove={() => {
+              setContractImageFile(null);
+              setContractImageUrl(null);
+              return true;
+            }}
+            accept="image/*"
+            fileList={contractImageFile ? [{
+              uid: '-1',
+              name: contractImageFile.name || 'contract-image.png',
+              status: 'done',
+              url: contractImageUrl
+            }] : []}
+          >
+            {!contractImageFile && (
+              <div>
+                <FileImageOutlined style={{ fontSize: 32, color: '#1890ff' }} />
+                <div style={{ marginTop: 8 }}>Tải lên ảnh</div>
+              </div>
+            )}
+          </Upload>
+
+          {contractImageUrl && (
+            <div style={{ marginTop: 16 }}>
+              <Text strong>Xem trước:</Text>
+              <div style={{ marginTop: 8, border: '1px solid #d9d9d9', padding: 8, borderRadius: 4 }}>
+                <Image src={contractImageUrl} alt="Contract Preview" style={{ maxWidth: '100%' }} />
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
       </div>
     </Spin>

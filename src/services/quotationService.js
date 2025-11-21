@@ -92,7 +92,7 @@ export const customerAPI = {
   update: async (id, data) => {
     const response = await axios.put(`${ORDER_API}/Customer/${id}`, data, {
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'multipart/form-data'
       }
     });
     return response.data;
@@ -250,6 +250,12 @@ export const paymentAPI = {
         'Content-Type': 'application/json'
       }
     });
+    return response.data;
+  },
+
+  // Get transaction history for a payment
+  getTransactionHistory: async (paymentId) => {
+    const response = await axios.get(`${ORDER_API}/Transaction/payment/${paymentId}`);
     return response.data;
   }
 };
@@ -436,7 +442,7 @@ export const deliveryAPI = {
 export const promotionAPI = {
   // Get all promotions
   getAll: async () => {
-    const response = await axios.get(`${ORDER_API}/VehiclePromotion`);
+    const response = await axios.get(`${ALLOCATION_API}/VehiclePromotion`);
     return response.data;
   },
 
@@ -456,7 +462,9 @@ export const promotionAPI = {
   create: async (data) => {
     const formData = new FormData();
     formData.append('VehicleId', data.vehicleId);
-    formData.append('AgencyId', data.agencyId);
+    if (data.agencyId) {
+      formData.append('AgencyId', data.agencyId);
+    }
     formData.append('PromoName', data.promoName);
     formData.append('DiscountAmount', data.discountAmount);
     formData.append('StartDate', data.startDate);
@@ -474,13 +482,15 @@ export const promotionAPI = {
   update: async (id, data) => {
     const formData = new FormData();
     formData.append('VehicleId', data.vehicleId);
-    formData.append('AgencyId', data.agencyId);
+    if (data.agencyId) {
+      formData.append('AgencyId', data.agencyId);
+    }
     formData.append('PromoName', data.promoName);
     formData.append('DiscountAmount', data.discountAmount);
     formData.append('StartDate', data.startDate);
     formData.append('EndDate', data.endDate);
 
-    const response = await axios.put(`${ORDER_API}/VehiclePromotion/${id}`, formData, {
+    const response = await axios.put(`${ALLOCATION_API}/VehiclePromotion/${id}`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
@@ -490,7 +500,7 @@ export const promotionAPI = {
 
   // Delete promotion
   delete: async (id) => {
-    const response = await axios.delete(`${ORDER_API}/VehiclePromotion/${id}`);
+    const response = await axios.delete(`${ALLOCATION_API}/VehiclePromotion/${id}`);
     return response.data;
   }
 };
@@ -956,6 +966,23 @@ export const vehicleInstanceAPI = {
   // Get vehicle instances by vehicle ID
   getByVehicleId: async (vehicleId) => {
     const response = await axios.get(`${ALLOCATION_API}/VehicleInstance/vehicle/${vehicleId}`);
+    return response.data;
+  },
+
+  // Update vehicle instance
+  update: async (id, data) => {
+    const formData = new FormData();
+    Object.keys(data).forEach(key => {
+      if (data[key] !== null && data[key] !== undefined) {
+        formData.append(key, data[key]);
+      }
+    });
+    
+    const response = await axios.put(`https://allocation.agencymanagement.online/VehicleInstance/update/${id}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
     return response.data;
   }
 };
