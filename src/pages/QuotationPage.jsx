@@ -245,15 +245,22 @@ const QuotationPage = () => {
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
+        const agencyId = getAgencyId();
         const customersData = await customerAPI.getAll();
-        setCustomers(customersData || []);
+        
+        // Filter customers by current agency
+        const filteredCustomers = agencyId 
+          ? (customersData || []).filter(c => c.agencyId === agencyId)
+          : (customersData || []);
+        
+        setCustomers(filteredCustomers);
       } catch (error) {
         console.error('Error fetching customers:', error);
       }
     };
 
     fetchCustomers();
-  }, []);
+  }, [getAgencyId]);
 
   // Vehicle data với giá từ API
   const vehicleData = useMemo(() => {
